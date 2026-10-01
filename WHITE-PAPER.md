@@ -596,6 +596,19 @@ storage, transport and query interfaces, application workflows, wallet software
 and key custody, and any user interface. These are allowed to differ between
 implementations without affecting conformity.
 
+**How the version of a fact's format is identified.** A fact's payload carries no
+version string. The version lives in the **tag**: `REPID_RATING1`,
+`REPID_PLATFORM1` and `REPID_TRUST1` all end in a revision digit, and that digit
+is the version of the tag's encoding. A recognizer that has matched a tag
+therefore already knows which rules govern the payload behind it.
+
+This matters for safety. A tag whose revision an implementation does not know
+matches nothing, and under the recognition rules that yields **no fact at all** —
+not a fact with unreadable fields. A wrong reading of a fact is therefore
+unreachable rather than merely forbidden. A future change to a payload must
+ship as a new tag with a new revision digit, which is a `MAJOR` change, and must
+never reuse an existing tag.
+
 **Which changes break compatibility:**
 
 | Change | Version required |
@@ -634,7 +647,7 @@ that has been validated by an implementation outside this project, and
 
 Neither criterion is met today. The protocol says so rather than rounding up.
 
-> Source: `spec/SPEC-010-protocol-versioning.md` §2, §3, §4, §7, §8;
+> Source: `spec/SPEC-010-protocol-versioning.md` §2, §3, §4, §6, §7, §8;
 > `protocol/protocol-version.json`.
 
 ---
@@ -719,7 +732,7 @@ identifiers are the source of the fixture the schema is checked against — the
 suite tests real bytes, not hand-written examples.
 
 **Recognition coverage, measured 2026-10-01:** the recognition SDK's suite
-reports **80 tests, 80 passed, 0 failures** across 9 files, all running
+reports **86 tests, 86 passed, 0 failures** across 10 files, all running
 unconditionally with no network access. Within it, 38 tests cover
 data-output container parsing and receipt-genesis shape recognition, the two
 areas that had previously been specified but unverified.
@@ -852,7 +865,7 @@ npm run artifacts:check   # every covenant recompiles to the committed artifact
 
 Every figure quoted above was measured, not estimated. The protocol's own checks
 (23 tests, 9 specifications, 128 requirement identifiers, three reproducing
-artifacts) were run on 2026-10-01. The recognition suite figure (80 tests in 9
+artifacts) were run on 2026-10-01. The recognition suite figure (86 tests in 10
 files) and the demonstration application's figures (35 passing, 38 skipped in 4
 files) were measured the same day in their own repositories. The real-network
 provenance — Chipnet, five facts across three fact types, 2026-09-27 — is
@@ -877,7 +890,7 @@ section introduces a rule, value or claim that is not traceable to one of them.
 | 8. Recognition | SPEC-009 §5, §7, §8; SPEC-008 §5, §5.1 |
 | 9. What the facts allow | SPEC-008 §6, §8 |
 | 10. Security and abuse | SPEC-008 §7, §7.1 |
-| 11. Versioning | SPEC-010 §2, §3, §4, §7, §8; `protocol/protocol-version.json` |
+| 11. Versioning | SPEC-010 §2, §3, §4, §6, §7, §8; `protocol/protocol-version.json` |
 | 12. Conformance | SPEC-008 §9, Annex B.2; `constitution.md` Art. 3; `README.md`; `tools/check-artifacts.mjs`; `conformance/schema.test.mjs` |
 | 13. Reference implementation | `REFERENCE-IMPLEMENTATION.md`; SPEC-009 §10.1, Annex B; SPEC-008 Annex A; `conformance/fixtures/real-chain-facts.json`; `protocol/protocol-version.json` |
 | 14. Declared limitations | SPEC-009 §11 and "Out of Scope"; SPEC-008 §7.1 and "Out of Scope"; SPEC-001 "Edge Cases"; `REFERENCE-IMPLEMENTATION.md` |

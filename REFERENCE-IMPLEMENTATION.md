@@ -45,6 +45,8 @@ Legend: **local** = this repository; **sdk** = the SDK repository;
 | Field schema of the seven events (SPEC-008 §3) | `protocol/schemas/repid-fact.schema.json` (local) | `conformance/schema.test.mjs` (local) and `sdk:test/schema_conformance.test.ts` (9), including the five facts reconstructed from a real Chipnet run |
 | Wire format and recognition (SPEC-009) | `protocol/constants.json` (local), `sdk:src/bytes.ts`, `sdk:src/recognize.ts` | `conformance/schema.test.mjs` (local), `sdk:test/protocol_inputs.test.ts` (5), `sdk:test/op_return_encoding.test.ts` (23, RF-W01–RF-W05 and RF-W45) and `sdk:test/receipt_genesis_shape.test.ts` (15, RF-W38–RF-W40). The open vectors are listed in SPEC-009 Annex B.2 |
 | Rating Right is single-use, spent even when invalid (RF-W21) | `sdk` | `sdk:test/rating_right_consumption.test.ts` (5) — the five cases that regressed this behaviour |
+| Declared set of implemented protocol versions (SPEC-010 §5) | `sdk:src/version.ts` | `sdk:test/sdk_version.test.ts` (6) — the declaration is hand-written rather than derived from the version file, so the test proves an unreviewed version is refused. The load-time refusal is exercised by the suite importing the SDK; the refusal itself is verified by two negative runs in which claiming `0.2.0`, or desynchronising `SDK_VERSION` from `package.json`, was shown to fail the suite |
+| Tag revision identifies the format version (SPEC-010 §6) | `protocol/constants.json` (local), `sdk:src/bytes.ts` | `sdk:test/op_return_encoding.test.ts` (23) and `sdk:test/protocol_inputs.test.ts` (5) — the tag is compared by exact byte equality, so an unknown revision matches no recognizer |
 | Covenant artifacts reproduce | `contracts/` + `artifacts/` (local) | `tools/check-artifacts.mjs` (local), which recompiles and compares the full artifact |
 
 ## 3. Honest coverage
@@ -94,7 +96,7 @@ demo repository with the funds gate unset.
 
 | Suite | Repository | Result | Breakdown |
 |---|---|---|---|
-| Recognition | `repid-sdk` | **80 passed / 0 failed** (9 files) | all run unconditionally; no network needed |
+| Recognition | `repid-sdk` | **86 passed / 0 failed** (10 files) | all run unconditionally; no network needed |
 | Demo | demo repository | **35 passed / 0 failed, 38 skipped** (4 files) | `e2e_server.test.js` (3 unconditional of 41), `interaction.test.js` (9), `reputation.test.js` (20), `persistence_conformance.test.js` (3) |
 
 The 38 skipped tests mint a genesis and have **not** been re-run against funded

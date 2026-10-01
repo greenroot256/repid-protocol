@@ -109,13 +109,28 @@ Typos, formatting, examples, cross-reference fixes. No semantic content.
 An implementation MUST declare the set of protocol versions it implements, and
 MUST NOT claim a version it has not been verified against.
 
-- `repid-sdk` exports `SDK_VERSION` and `SUPPORTED_PROTOCOL_VERSIONS`.
 - Before building or recognizing anything, an implementation MUST check that
   the protocol version it is operating under is in its supported set, and MUST
   fail loudly if it is not.
 - A recognizer processing historical data spanning a `MAJOR` boundary MUST
   report which version it applied to each fact. It MUST NOT silently apply one
   rule set to data from another.
+
+The declared set MUST be stated **independently of the file it is checked
+against**. An implementation that derives its supported set from the very
+version file that declares the current version agrees with itself by
+construction, and can therefore never catch an unreviewed change. The
+declaration exists in order to be able to disagree; a version that arrives
+through a sync rather than through a review has to be refused until somebody
+adds it deliberately.
+
+> This section states what an implementation must do, not what any particular one
+> does. Where the reference implementation satisfies it — which symbols it
+> exports, and which test proves the refusal — is recorded in
+> `REFERENCE-IMPLEMENTATION.md`, which is non-normative and is refactored
+> independently of this specification. Naming a specific API here would make a
+> normative document depend on a code detail it does not own, and the
+> requirement would then rot silently the first time the code was refactored.
 
 ## 6. How the Format Version Is Identified
 
