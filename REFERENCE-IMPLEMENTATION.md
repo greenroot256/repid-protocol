@@ -87,12 +87,15 @@ none:
 ## 4. External suite status
 
 Measured separately, because recognition now lives in its own repository and a
-single combined number would hide which half of the evidence is where.
+single combined number would hide which half of the evidence is where. The
+recognition figure was re-measured on **2026-10-01** by running `npm test` in
+`repid-sdk`, and the demo figure on the same date by running `npm test` in the
+demo repository with the funds gate unset.
 
 | Suite | Repository | Result | Breakdown |
 |---|---|---|---|
-| Recognition | `repid-sdk` | **42 passed / 0 failed** (7 files) | all run unconditionally; no network needed |
-| Demo | demo repository | **32 passed / 0 failed, 38 skipped** (3 files) | `e2e_server.test.js` (3 unconditional), `interaction.test.js` (9), `reputation.test.js` (20) |
+| Recognition | `repid-sdk` | **80 passed / 0 failed** (9 files) | all run unconditionally; no network needed |
+| Demo | demo repository | **35 passed / 0 failed, 38 skipped** (4 files) | `e2e_server.test.js` (3 unconditional of 41), `interaction.test.js` (9), `reputation.test.js` (20), `persistence_conformance.test.js` (3) |
 
 The 38 skipped tests mint a genesis and have **not** been re-run against funded
 wallets since the gate was added; they are declared unverified rather than
@@ -100,7 +103,7 @@ passing. Setting `REPID_E2E_FUNDS=1` enables them but does not fund anything: a
 reachable, funded wallet is still required.
 
 The 38 recognition tests that previously ran in the demo were **removed**, not
-renamed, and replaced by 42 TypeScript tests in the SDK that assert the same
+renamed, and replaced by 80 TypeScript tests in the SDK that assert the same
 behaviour plus the cases the JavaScript suite never had. Keeping a copy of a
 suite in a repository that no longer contains the code it tests would have
 produced a number that looked like coverage while measuring nothing.

@@ -81,8 +81,12 @@ specification that owns it:
   tests that provided it were removed, and `MockNetworkProvider` never ran the
   Bitcoin VM, so what was lost was ABI-shape regression coverage, not real-VM
   evidence. Covenant conformance rests on real-VM E2E runs, not on a test suite.
-- **Container parsing and Receipt-genesis shape are specified but unverified.**
-  See `SPEC-009` Annex B for the open vectors.
+- **Some recognition rules still lack a negative test.** The `OP_RETURN` container
+  rules and the Receipt-genesis shape rules are verified — 38 tests in the
+  reference SDK (23 for container encoding, 15 for the Receipt genesis shape) —
+  but seven vectors listed in `SPEC-009` Annex B.2 have no test yet, including a
+  rating payload with no tracked Rating Right and a transaction that matches two
+  recognizers at once.
 - **The compiler-emitted artifact `fingerprint` is not a conformance anchor.** It
   does not change when a covenant's logic changes. `artifacts:check` compares the
   full artifact instead, and the check is itself verified by a negative test.
