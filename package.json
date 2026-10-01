@@ -9,10 +9,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"conformance/**/*.test.mjs\"",
+    "test": "node tools/check-specs.mjs && node tools/build-requirements.mjs --check && node --test \"conformance/**/*.test.mjs\"",
     "conformance": "node --test \"conformance/**/*.test.mjs\"",
     "artifacts:check": "node tools/check-artifacts.mjs",
-    "specs:check": "node tools/check-specs.mjs"
+    "specs:check": "node tools/check-specs.mjs",
+    "requirements:build": "node tools/build-requirements.mjs",
+    "requirements:check": "node tools/build-requirements.mjs --check"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
