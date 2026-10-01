@@ -21,8 +21,9 @@ This specification defines:
 ## 2. The Version Identifier
 
 The protocol version is a three-part semantic version, `MAJOR.MINOR.PATCH`,
-recorded machine-readably in `protocol/protocol-version.json` and carried in
-the OP_RETURN stream as described in §6.
+recorded machine-readably in `protocol/protocol-version.json`. That file is the
+authoritative copy; §6 describes how the version of an individual fact's
+*encoding* is identified, which is a separate mechanism.
 
 ### Current version
 
@@ -31,16 +32,21 @@ the OP_RETURN stream as described in §6.
   "protocol": "repid",
   "version": "0.1.0",
   "status": "pre-release",
+  "specification": {
+    "normativeCore": "SPEC-008-repid-protocol.md",
+    "wireFormat": "SPEC-009-repid-wire-format-and-recognition.md",
+    "recognition": "SPEC-005-indexer-protocol.md",
+    "versioning": "SPEC-010-protocol-versioning.md"
+  },
   "promotionTo1_0_0": [
-    "At least one independent implementation outside this repository has been
-     verified against the recognition rules (SPEC-005) and the wire format
-     (SPEC-009), following docs/EXTERNAL-INDEXER-GUIDE.md in the demo repository.",
-    "The covenant artifacts in artifacts/ have been executed by the Bitcoin VM
-     on a public test network with every invariant in SPEC-008 section 4
-     asserted, not merely observed."
+    "At least one independent implementation outside this repository has been verified against the recognition rules (SPEC-005) and the wire format (SPEC-009), following the external indexer guide.",
+    "The covenant artifacts in artifacts/ have been executed by the Bitcoin VM on a public test network with every invariant in SPEC-008 section 4 asserted, not merely observed."
   ]
 }
 ```
+
+The guide referred to in the first criterion is the external indexer guide that
+ships with the demonstration repository; it is not part of this repository.
 
 > **Why `0.1.0` and not `1.0.0`.** A leading zero is a promise that the
 > specification has *not* yet been validated by an independent implementation.
@@ -111,26 +117,53 @@ MUST NOT claim a version it has not been verified against.
   report which version it applied to each fact. It MUST NOT silently apply one
   rule set to data from another.
 
-## 6. Version on the Wire
+## 6. How the Format Version Is Identified
 
-The `OP_RETURN` payload of a RepID fact is defined in SPEC-009. A fact emitted
-under this specification carries the protocol name and version so that a future
-recognizer can tell which rule set produced it:
+**The payload of a RepID fact does not carry a version string.** The wire format
+is exactly what SPEC-009 §3–§4 defines: a tag followed by a payload, and nothing
+else.
 
-```text
-<repid-tag> <protocol-version> <payload...>
-```
+The version of a fact's encoding is carried by **the tag itself**. Every tag in
+`protocol/constants.json` ends in a revision digit — `REPID_RATING1`,
+`REPID_PLATFORM1`, `REPID_TRUST1` — and that digit *is* the version of that tag's
+encoding. A recognizer that has matched a tag therefore already knows which rule
+set governs the payload behind it; there is nothing further to read.
 
-Concretely, the `REPID_RATING1` payload becomes:
+This is deliberate, and it is what makes an unknown format safe:
 
-```text
-REPID_RATING1 0.1.0 <raterPkh> <rateePkh> <score>
-```
+- A tag whose revision a recognizer does not implement matches no recognizer, so
+  under SPEC-009 it produces **no fact**. It is not a fact with unreadable
+  fields — it is not a fact at all.
+- A wrong field interpretation is therefore unreachable. A recognizer cannot read
+  `REPID_RATING2` bytes with the `REPID_RATING1` rules, because the tags differ
+  and it never applies those rules.
+- Guessing remains forbidden on its own terms: a wrong field interpretation is
+  indistinguishable, to a third party auditing the fact, from a correct one.
 
-A recognizer that receives a version it does not implement MUST report the fact
-as **unreadable for that version** and MUST NOT guess the fields. Guessing is
-forbidden because a wrong field interpretation is indistinguishable, to a third
-party auditing the fact, from a correct one.
+The protocol version `0.1.0` covers the **set** of tags and rules, not an
+individual fact. Which specification produced a given fact is not written into
+that fact's bytes; it is recovered from the tag, and the tag's revision is what
+ties the fact to the specification that defines it.
+
+If a future revision needs to change a payload — more fields, a different
+length, a version string inside the payload — it MUST be published as a **new
+tag with a new revision digit** (`REPID_RATING2`) and MUST NOT reuse an existing
+tag. That is a `MAJOR` change under §4, and it breaks in both directions: a
+recognizer that meets the new tag emits no fact for it until it implements the
+new revision.
+
+> **Withdrawn text.** An earlier version of this section specified the payload as
+> `<repid-tag> <protocol-version> <payload...>`, with
+> `REPID_RATING1 0.1.0 <raterPkh> <rateePkh> <score>` as the concrete case. It
+> was never implemented and it contradicts the normative wire format on two
+> counts. A `REPID_RATING1` payload is exactly two chunks whose second chunk is
+> exactly one byte, so a recognizer is forbidden from reading the rater and the
+> ratee out of it — they are recovered from the Rating Right the transaction
+> spends, which is the design that lets a rating carry no addresses. And the
+> withdrawn text contradicted itself: inserting a version into the payload would
+> have changed the number of chunks, and SPEC-009 makes the exact chunk count
+> part of the contract. Tag revisions are the versioning mechanism; the payload
+> carries no version.
 
 ## 7. Compatibility and Migration
 
