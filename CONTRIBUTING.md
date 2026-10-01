@@ -31,13 +31,23 @@ are not style preferences.
 
 ```bash
 npm install
-npm test                  # conformance suite
+npm test                  # specs, requirement inventory, encoding, conformance suite
 npm run specs:check       # dead references and missing specs
+npm run requirements:check # the inventory still matches the specifications
+npm run encoding:check    # no mojibake, no partly rewritten file
 npm run artifacts:check   # covenants still reproduce
 ```
 
-All three must pass. If `artifacts:check` reports `SKIPPED` because the compiler
+`npm test` runs everything except `artifacts:check`, so a single command covers
+most of it. If `artifacts:check` reports `SKIPPED` because the compiler
 is unavailable, say so in the pull request; do not present it as a pass.
+
+`requirements:check` exists because a requirement added to a specification must
+not be able to enter the world unnoticed. `build-requirements.mjs` extracts every
+declaration into `protocol/requirements.json`; if you add, remove or reword a
+requirement, run `npm run requirements:build` and commit the result in the same
+change. A CI failure here means the inventory and the specifications disagree,
+which is exactly what it is for.
 
 ## Writing a specification
 

@@ -58,11 +58,14 @@ interpretable by people who were not in the room.
 
 ```bash
 npm install
-npm test                  # conformance suite
+npm test                  # specs, requirement inventory, encoding, conformance suite
 npm run specs:check       # no dead references, no missing specs
+npm run requirements:check # the inventory still matches the specifications
+npm run encoding:check    # no mojibake, no partly rewritten file
 npm run artifacts:check   # every covenant recompiles to the committed artifact
 ```
 
+`npm test` runs the first four of those, so a single command is enough.
 `artifacts:check` reports `SKIPPED`, never `PASS`, if the compiler is missing.
 A toolchain that is absent is not evidence of a correct artifact.
 

@@ -71,21 +71,34 @@ An assumption awaiting confirmation sits inside a normative artifact. It is cons
 
 **Deviates.** The deviation is in traceability, not in the absence of tests.
 
-The specifications define **128 distinct RF identifiers**. The test suites cite them as follows:
+The specifications declare **157 requirements** under **128 distinct RF identifiers**. The two numbers differ because nine identifiers are declared in more than one legacy spec — `RF-04` in SPEC-004 and SPEC-005, and others like it — so only the spec-qualified key `SPEC-NNN/RF-Xnn` identifies a requirement unambiguously. Counting identifiers rather than declarations understates the work, and the earlier revision of this audit did exactly that; the count below is per declaration, per spec.
+
+Before the inventory existed, the test suites cited identifiers as follows:
 
 | Location | Distinct RF identifiers cited |
 |---|---|
-| `repid-sdk/test/` (86 tests, 10 files) | 9 |
+| `repid-sdk/test/` (93 tests, 11 files) | 9 |
 | `repid-protocol/conformance/` (23 tests) | 1 |
 | `repid-demo/test/` (35 tests, 4 files) | 3 |
 | Sum | 13 |
 | **Union, counting `RF-04` and `RF-06` once** | **11 of 128** |
 
-The 11 are `RF-03`, `RF-04`, `RF-06`, `RF-W01`, `RF-W02`, `RF-W05`, `RF-W08`, `RF-W38`, `RF-W39`, `RF-W40`, `RF-W45`.
+The 11 are `RF-03`, `RF-04`, `RF-06`, `RF-W01`, `RF-W02`, `RF-W05`, `RF-W08`, `RF-W38`, `RF-W39`, `RF-W40`, `RF-W45`. The union is reported in identifiers because the collisions make a per-declaration union meaningless: `RF-04` in SPEC-004 and `RF-04` in SPEC-005 are different requirements that happen to share a name, and a test covering one does not cover the other.
 
-Citations are also coarse: `op_return_encoding.test.ts:1` covers `RF-W01..RF-W05` with a file-level comment, and `issued_rating_and_indexer.test.ts:298` names `RF-04` inside a single `it()`.
+Citations are also coarse: `op_return_encoding.test.ts` covers `RF-W01`–`RF-W05` with a file-level comment, and `issued_rating_and_indexer.test.ts` names `RF-04` inside a single `it()`.
 
-**117 of the 128 RF identifiers are cited by no test in any repository.** An unannotated requirement is not necessarily an untested one — a test may cover the behaviour without naming it, and 48 RF identifiers are cited in prose across `REFERENCE-IMPLEMENTATION.md` and the SDK sources, so some coverage is certainly real. But the link from requirement to test cannot be demonstrated for the other 117, and that is what Article 3 asks to be demonstrable. The claim "every RF has a test" is currently unverifiable rather than verified.
+**117 of the 128 identifiers were cited by no test in any repository.** An unannotated requirement is not necessarily an untested one — a test may cover the behaviour without naming it, and 48 identifiers are cited in prose across `REFERENCE-IMPLEMENTATION.md` and the SDK sources, so some coverage is certainly real. But the link from requirement to test could not be demonstrated, and that is what Article 3 asks to be demonstrable. The claim "every RF has a test" was unverifiable rather than verified.
+
+**Now enforced rather than asserted.** `tools/build-requirements.mjs` extracts the 157 declarations from the specifications into `protocol/requirements.json`, the SDK syncs that inventory, and `test/traceability.test.ts` fails when a mapping is missing a requirement, cites a test that does not exist, or falls below a declared per-spec floor. Every requirement is therefore accounted for as either covered by a named test or explicitly uncovered with a stated reason. Coverage, reported by the suite rather than asserted here:
+
+| Spec | Declarations | Cited | Share |
+|---|---|---|---|
+| `SPEC-001` – `SPEC-006` | 42 | 0 | 0% |
+| `SPEC-008` | 70 | 17 | 24% |
+| `SPEC-009` | 45 | 9 | 20% |
+| **Total** | **157** | **26** | **17%** |
+
+The 26 are up from 11 because the mapping is written in terms of test names, which lets several requirements share a test that previously named only one of them. The legacy specs remain at 0 and are recorded as unverified rather than exempted: SPEC-001–006 are superseded by SPEC-008, and a spec that is not implemented is not thereby traced.
 
 Requirements known to be genuinely untested, from the conformance suite's own records: the 7 recognition vectors of SPEC-009 Annex B.2 that the suite reports as open.
 
@@ -99,8 +112,9 @@ Requirements known to be genuinely untested, from the conformance suite's own re
 |---|---|
 | SPEC-010 §5 stated as normative that the SDK exports `SDK_VERSION` and `SUPPORTED_PROTOCOL_VERSIONS` | Neither symbol existed. The section now states the requirement without asserting facts about a specific codebase, and the SDK implements it (`repid-sdk/src/version.ts`). |
 | SPEC-010 §6 stated that the wire format carried a `version` field | The field does not exist. The section now describes the real mechanism (revision digit in the tag). |
-| `REFERENCE-IMPLEMENTATION.md` reported 42 recognition tests in 8 files | Measured 80 in 9 files at the time of the audit; 86 in 10 after §5 was implemented. |
+| `REFERENCE-IMPLEMENTATION.md` reported 42 recognition tests in 8 files | Measured 80 in 9 files at the time of the audit; 86 in 10 after §5 was implemented; 93 in 11 once requirement traceability was enforced. |
 | `README.md` presented two spec sections as specified but unverified while citing 38 tests that do cover them | Corrected against the measured suite. |
+| `constitution.md` carried U+00E2 U+20AC U+201D in all 14 of its dash characters | The file rendered, parsed and passed every check while damaged. Repaired, and `tools/check-encoding.mjs` now fails the build on mojibake and on a file that was partly rewritten with the wrong line endings. |
 | `protocol/protocol-version.json` referenced `SPEC-005-fact-recognition.md`, which does not exist | Corrected to `SPEC-005-indexer-protocol.md`. |
 
 Declared tooling limitations are present and specific rather than omitted: the `debug()` unlocker cases remain marked inconclusive, and the fact-type network evidence covers 3 of 7 event types with the shortfall stated.
@@ -144,7 +158,7 @@ These are demo conveniences. They are the kind of functionality Article 6 names 
 
 The two repositories that hold the normative artifacts — the covenants and the specifications — have no task tracker, so Article 7's recording requirement cannot be met for the normative layer. `repid-demo/tasks.md` demonstrates that the practice works when it is applied.
 
-RF-level traceability fails for the same reason as Article 3: 11 of 128 RF identifiers are cited in tests, and the two repositories with the strictest traceability duty hold no tracker at all.
+RF-level traceability fails for the same reason as Article 3, and the tracker gap is unchanged: 26 of the 157 declarations are cited in tests, and the two repositories with the strictest traceability duty still hold no task tracker of their own. The SDK now enforces the requirement-to-test half of this in code, but nothing tracks the other half, which is whether a requirement is finished.
 
 ## Article 8 — Governance for a Non-Programmer Architect
 
@@ -184,7 +198,7 @@ The unexercised path is the one Article 10 most depends on: a covenant change ac
 
 | # | Article | Deviation | Severity |
 |---|---|---|---|
-| 1 | 3 | 117 of 128 RF identifiers cannot be traced to a test | Medium |
+| 1 | 3 | 131 of 157 requirement declarations have no test cited for them | Medium |
 | 2 | 5 | `repid-demo/references/repid-guia-visual.html` is in Spanish | Low |
 | 3 | 7 | No task tracker in `repid-protocol` or `repid-sdk` | Medium |
 | 4 | 2 | Four output-count invariants enforced in code but not stated as numbered requirements | Low |

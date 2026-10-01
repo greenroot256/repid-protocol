@@ -669,20 +669,26 @@ introduces an on-chain value judgment, or if it presents a known limitation as a
 guarantee. Differences in non-normative layers — interface, storage, network,
 reputation model — must not change protocol results.
 
-### The three checks in this repository
+### The checks in this repository
 
 | Command | What it proves |
 |---|---|
 | `npm test` | The fact schema and the protocol constants behave as specified, checked against facts reconstructed from a real network run, including negative cases |
 | `npm run specs:check` | No specification has a dead reference and no specification is missing |
+| `npm run requirements:check` | The machine-readable requirement inventory still matches the specifications that declare it |
+| `npm run encoding:check` | No text file carries mojibake, and no file was partly rewritten with the wrong line endings |
 | `npm run artifacts:check` | Each covenant source recompiles to exactly the committed artifact |
+
+`npm test` runs the first four.
 
 **Measured on 2026-10-01:**
 
 | Check | Result |
 |---|---|
 | `npm test` | **23 tests, 23 passed, 0 failures**, running unconditionally |
-| `npm run specs:check` | 9 specifications, 128 requirement identifiers, no dead references |
+| `npm run specs:check` | 9 specifications, 157 requirement declarations under 128 distinct identifiers, no dead references |
+| `npm run requirements:check` | 157 declarations extracted, inventory in sync |
+| `npm run encoding:check` | 35 text files, valid UTF-8, no mojibake, no partly rewritten file |
 | `npm run artifacts:check` | All three contract artifacts reproduce exactly, with `cashc` 0.13.2 |
 
 `artifacts:check` is designed so that an absent toolchain can never masquerade
@@ -732,7 +738,7 @@ identifiers are the source of the fixture the schema is checked against — the
 suite tests real bytes, not hand-written examples.
 
 **Recognition coverage, measured 2026-10-01:** the recognition SDK's suite
-reports **86 tests, 86 passed, 0 failures** across 10 files, all running
+reports **93 tests, 93 passed, 0 failures** across 11 files, all running
 unconditionally with no network access. Within it, 38 tests cover
 data-output container parsing and receipt-genesis shape recognition, the two
 areas that had previously been specified but unverified.
@@ -856,18 +862,21 @@ with the first three.
 
 ```bash
 npm install
-npm test                  # conformance suite
+npm test                  # specs, requirement inventory, encoding, conformance suite
 npm run specs:check       # no dead references, no missing specs
+npm run requirements:check # the inventory still matches the specifications
+npm run encoding:check    # no mojibake, no partly rewritten file
 npm run artifacts:check   # every covenant recompiles to the committed artifact
 ```
 
 ### Source of the numerical claims in this document
 
 Every figure quoted above was measured, not estimated. The protocol's own checks
-(23 tests, 9 specifications, 128 requirement identifiers, three reproducing
-artifacts) were run on 2026-10-01. The recognition suite figure (86 tests in 10
-files) and the demonstration application's figures (35 passing, 38 skipped in 4
-files) were measured the same day in their own repositories. The real-network
+(23 tests, 9 specifications, 157 requirement declarations under 128 distinct
+identifiers, three reproducing artifacts) were run on 2026-10-01. The recognition
+suite figure (93 tests in 11 files) and the demonstration application's figures
+(35 passing, 38 skipped in 4 files) were measured the same day in their own
+repositories. The real-network
 provenance — Chipnet, five facts across three fact types, 2026-09-27 — is
 recorded in `conformance/fixtures/real-chain-facts.json`.
 

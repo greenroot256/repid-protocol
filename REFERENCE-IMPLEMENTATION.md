@@ -96,7 +96,7 @@ demo repository with the funds gate unset.
 
 | Suite | Repository | Result | Breakdown |
 |---|---|---|---|
-| Recognition | `repid-sdk` | **86 passed / 0 failed** (10 files) | all run unconditionally; no network needed |
+| Recognition | `repid-sdk` | **93 passed / 0 failed** (11 files) | all run unconditionally; no network needed; 7 of them enforce requirement traceability |
 | Demo | demo repository | **35 passed / 0 failed, 38 skipped** (4 files) | `e2e_server.test.js` (3 unconditional of 41), `interaction.test.js` (9), `reputation.test.js` (20), `persistence_conformance.test.js` (3) |
 
 The 38 skipped tests mint a genesis and have **not** been re-run against funded
