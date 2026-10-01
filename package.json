@@ -9,12 +9,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node tools/check-specs.mjs && node tools/build-requirements.mjs --check && node --test \"conformance/**/*.test.mjs\"",
+    "test": "node tools/check-specs.mjs && node tools/build-requirements.mjs --check && node tools/check-encoding.mjs && node --test \"conformance/**/*.test.mjs\"",
     "conformance": "node --test \"conformance/**/*.test.mjs\"",
     "artifacts:check": "node tools/check-artifacts.mjs",
     "specs:check": "node tools/check-specs.mjs",
     "requirements:build": "node tools/build-requirements.mjs",
-    "requirements:check": "node tools/build-requirements.mjs --check"
+    "requirements:check": "node tools/build-requirements.mjs --check",
+    "encoding:check": "node tools/check-encoding.mjs",
+    "encoding:fix": "node tools/check-encoding.mjs --fix-dashes"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
