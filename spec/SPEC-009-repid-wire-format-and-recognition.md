@@ -381,15 +381,145 @@ Declared explicitly per Constitution Article 4 — none of these is a guarantee:
   artifact (§8).
 - **Recognition is shape-based, so it is spoofable by an issuer that can produce
   the bytes.** The covenant and the network's script execution are what make a
-  fact genuine; the indexer only reads what survived them.
+  fact genuine; the indexer only reads what survived them. This is the gap
+  §12 closes, for the two covenant-backed fact types, and it is closed as an
+  **optional** verification: a recognizer that does not apply §12 is unchanged by
+  it, and §11's statement continues to describe it.
 - **`MockNetworkProvider` does not execute the VM nor validate signatures.**
   A transaction accepted by the mock is not proof that its script is correct.
   The "impostor" cases (a P2PKH pretending to be a vault) remain **inconclusive**
-  with the currently available tooling (SPEC-005 §6).
+  with the currently available tooling (SPEC-005 §6). §12 now settles them by
+  construction rather than by executing the impostor: a recognizer that applies
+  §12 rejects the impostor from the bytes alone, and the reference SDK's tests
+  do exactly that, both against perturbations of a canonical transaction and
+  against transactions a real Chipnet node accepted. What remains inconclusive is
+  narrower and is restated in §12.5.
 - **The contract `fingerprint` is not a recognition input and not a conformance
   anchor.** It does not change when a contract's logic changes (SPEC-005 §6).
 - **No automated UI coverage is claimed.** The reference demo's console is
   verified manually, through the guide shipped with that repository.
+
+## 12. Binding Verification (Optional)
+
+Everything above is shape recognition. It is deliberately permissive, and §11 says
+so: CashTokens lets **any** script create a token category, so the outputs of a
+canonical genesis can be minted by an impostor that never ran the covenant, and a
+shape-based recognizer cannot tell the two apart. §9 even requires a canonical
+`RECEIPT_GENESIS` to have exactly the shape an impostor would produce, because the
+covenant is what makes the difference and the covenant is what is missing.
+
+This section closes that gap for the two covenant-backed genesis paths **without
+running the VM**, and closes it as an *optional* verification.
+
+### 12.1 Why a comparison is possible at all
+
+A P2SH script hash commits to the redeem script that sits in the unlocking
+script, so the *script* is on chain even though the *hash* is all the locking
+script shows. The obstacle is that both covenants take pkh arguments in their
+constructor:
+
+```solidity
+contract IdentityVault(bytes20 ownerPkh)
+contract ReceiptGenesisValidator(bytes20 partyAPkh, bytes20 partyBPkh)
+```
+
+Every deployment is therefore a **different** script and a different script hash.
+There is no single constant to compare against. The comparison is nevertheless
+exact rather than heuristic, because the pkh values are not guesses: they are the
+values the recognizer has already read out of the very outputs it is checking, so
+the expected script is fully determined.
+
+- **RF-W46** (Options): An implementation **MAY** verify that a covenant-backed
+  fact was produced by the canonical covenant. This verification is **optional**
+  and is not part of recognition conformity (RF-W41). A recognizer that does not
+  apply it is unaffected by this section, and remains limited by §11 as that
+  section states.
+
+### 12.2 The deployed script layout
+
+- **RF-W47** (Ubiquity): Where an implementation applies binding verification, the
+  expected redeem script **MUST** be reconstructed as the canonical bytecode of the
+  named covenant preceded by its serialized constructor arguments, each argument
+  introduced by its own minimal push and in **reverse declaration order** (the
+  stack is LIFO), and **MUST NOT** be compared against a single hard-coded script
+  hash, because every deployment has a different one. An implementation **MUST NOT**
+  derive the expected script from the bytes it is verifying.
+
+  The two layouts in force are `0x14 || ownerPkh || body` for the vault genesis,
+  top-up and burn, and `0x14 || partyBPkh || 0x14 || partyAPkh || body` for the
+  receipt genesis, where the pkh values are the Rating Right holders read per
+  §9.2.
+- **RF-W48** (Options): Where an implementation applies binding verification, the
+  script hash **MAY** be committed in either of the two P2SH forms — a 35-byte
+  `OP_HASH256 <32> OP_EQUAL` or a 23-byte `OP_HASH160 <20> OP_EQUAL` — and the
+  implementation **MUST** select the hash function from the width it actually
+  found. It **MUST NOT** assume one form and silently fail on the other.
+- **RF-W49** (Undesired Behavior): If an implementation applies binding
+  verification and the covenant-backed bytes do not match the canonical covenant,
+  then it **MUST** emit **no fact** (SPEC-008 RF-V03, RF-C03) — not an error, not
+  a partial result, and **not** a fact marked `valid: false`.
+
+  The reason is that `valid: false` already has a different job (RF-W08: a rating
+  whose score falls outside 1–5 is still reported, so a consumer can see the
+  attempt was made). Reusing it here would assert that the protocol knows about
+  this transaction and disapproves of it, when the truth is that it was never a
+  RepID transaction. Overloading the flag would leave a consumer unable to tell a
+  reported-but-invalid fact from an unrecognized one.
+- **RF-W50** (Prohibition): An implementation that applies binding verification
+  **MUST NOT** require it of `TRUST_LINK`, `PLATFORM_CONFIRMATION` or
+  `RATING_ISSUED`. Those three are plain P2PKH spends carrying an `OP_RETURN`, and
+  they have no covenant to check. That is correct rather than a gap: they are
+  unilateral and need no authorization beyond the spender's own signature.
+
+### 12.3 What binding does not establish
+
+Binding is a byte comparison, not an execution. It deliberately proves less than
+the VM does, and the difference is stated rather than blurred.
+
+- **RF-W51** (Prohibition): Binding verification **MUST NOT** be described as
+  verifying signatures, validating scripts, or establishing that a transaction is
+  valid in any sense beyond its bytes matching the canonical covenant. It does
+  not run the VM (RF-W27) and re-checks nothing the network already enforced.
+- **RF-W52** (Options): An implementation that establishes a RepID identity, a
+  Receipt or Rating Rights (SPEC-008 RF-V12) **MUST** base that on binding, and
+  **MUST NOT** base it on a shape match alone. A recognizer that does not apply
+  this section may still report the shape, and must then be understood to make no
+  claim about identities at all.
+- **RF-W53** (Events): An `IDENTITY_GENESIS` in legacy form (SPEC-008 RF-V13) is
+  **out of scope** for this section and **MUST NOT** be rejected by it. There is no
+  covenant in that form, so there is nothing to bind, and the fact stays
+  recognized exactly as §9.1 requires. An implementation that applies binding must
+  therefore distinguish "no covenant to check" from "covenant does not match".
+
+### 12.4 Conformance
+
+- **RF-W54** (Options): An implementation **MAY** declare a **binding-verified**
+  capability, separate from recognition conformity (RF-W41), asserting that it
+  applies §12 to every fact that has a covenant behind it. It **MUST NOT** declare
+  the capability while leaving any covenant-backed path unverified, and the
+  declaration **MUST** be accompanied by the executable evidence required by
+  RF-W44.
+
+  The capability is separate from RF-W41 on purpose: a binding-verified
+  recognizer returns *fewer* facts than a recognition-conformant one, because it
+  rejects the impostors RF-W41 does not forbid it from accepting. Conforming to
+  §3–§9 and additionally applying §12 are not in tension; they are two different
+  claims.
+
+### 12.5 What remains inconclusive
+
+Narrowed from §11, and no wider:
+
+- Binding does not prove the **spend** was legitimate. A top-up or burn is bound by
+  comparing the redeem script it reveals, which shows the covenant's bytecode was
+  deployed — not that the owner's signature on it was valid. Signature enforcement
+  remains the network's (§11, RF-W27).
+- Binding establishes which **canonical** covenant produced the bytes, not that the
+  covenant's own `require` statements would have been satisfied by this particular
+  spend. That remains what the VM is for, and the `debug()` limitation recorded in
+  §11 still stands.
+- An implementation that does not apply §12 keeps every limitation §11 states for
+  it. Declaring the capability is what retires the first.
 
 ## Out of Scope
 
@@ -422,6 +552,11 @@ will drift as the reference is refactored.
 | §4.3 trust | `tryDecodeTrustLink` | 295–314 |
 | §7 precedence | `indexRawTransaction` | 361–408 |
 | §8 state | `createMemoryStore` / `createJsonFileStore` | 419–544 |
+| §12.1 expected script | `buildExpectedScript` | `covenant.ts` |
+| §12.2 scriptSig reading | `findFinalPush` / `readRedeemScript` | `covenant.ts` |
+| §12.2 hash form | `readP2SHHash` | `covenant.ts` |
+| §12.2 vault binding | `verifyVaultOutputBinding` | `covenant.ts` |
+| §12.2 receipt binding | `verifyRedeemScriptBinding` | `covenant.ts` |
 
 ## Annex B — Conformance Vectors and Test Obligations
 
@@ -434,6 +569,18 @@ is how a gap goes unnoticed.
 
 | Vector | Expected | Rule | Test |
 |---|---|---|---|
+| Vault genesis bound to the canonical covenant | `IDENTITY_GENESIS` | RF-W47 | `covenant_binding` |
+| Receipt genesis revealing the canonical script, 164 bytes | `RECEIPT_GENESIS` | RF-W47 | `covenant_binding` |
+| Vault genesis in the 23-byte `hash160` P2SH form | bound | RF-W48 | `covenant_binding` |
+| Redeem script that is not the canonical one | no fact | RF-W49 | `covenant_binding` |
+| Redeem script with the right body, wrong constructor arg | no fact | RF-W49 | `covenant_binding` |
+| Redeem script with the right body and no constructor arg | no fact | RF-W47 | `covenant_binding` |
+| P2PKH output shaped like a vault output | no fact | RF-W49 | `covenant_binding` |
+| P2SH output committing to an unrelated script | no fact | RF-W49 | `covenant_binding` |
+| `scriptSig` with no final push | no fact | RF-W47 | `covenant_binding` |
+| Canonical vault, top-up and burn, over real Chipnet bytes | bound | RF-W47 | `real_chain_binding` |
+| `RATING_ISSUED` with no covenant behind it | recognized, **not** rejected | RF-W50 | `real_chain_binding` |
+| Rating with a well-formed payload but no tracked right | no fact | RF-W20 | `real_chain_binding` |
 | `OP_RETURN` with a `PUSHDATA1` (`0x4c`) push | no fact | RF-W02 | `op_return_encoding` |
 | `OP_RETURN` with a `PUSHDATA2` (`0x4d`) push | no fact | RF-W02 | `op_return_encoding` |
 | `OP_RETURN` with a `PUSHDATA4` (`0x4e`) push | no fact | RF-W02 | `op_return_encoding` |

@@ -167,6 +167,8 @@ Indexing reconstructs facts from the raw hex of a transaction. It is a **determi
 - **Valid fact**: a recognized fact that also satisfies the semantic rules of this spec (score range, known receipt, no self-trust, non-decreasing collateral).
 - **Invalid fact**: a recognized fact that violates a semantic rule; it is reported with `valid: false`, never ignored.
 - **Non-fact**: a transaction that matches no known shape; it produces no fact (`null`).
+- **Bound fact**: a recognized fact whose covenant-backed bytes were verified against the canonical covenant this spec requires for its type. Binding is an optional verification (SPEC-009 §12) and is what separates a fact the protocol vouches for from a shape anyone can produce.
+- **RepID identity**: the standing created by an `IDENTITY_GENESIS` that is **bound** to the canonical identity covenant in vault form. It is what an interpretation counts when it says a party has an identity. A recognizer that does not verify binding establishes only that a shape was seen, never that an identity exists.
 - **Verifiability**: a fact is cryptographically verifiable because the transaction that originates it exists on the chain and its txid anchors it; the indexer *recognizes* it, the chain *verifies* it.
 
 ### 5.2 Requirements (EARS)
@@ -182,6 +184,8 @@ Indexing reconstructs facts from the raw hex of a transaction. It is a **determi
 - **RF-V09** (Undesired Behavior): If a collateral fact does not preserve the NFT category/commitment or the new collateral is lower than the registered one, then the system must mark it with `valid: false`.
 - **RF-V10** (Ubiquity): The system must persist the index state so it survives process restarts.
 - **RF-V11** (State): The system must accept that order of appearance matters: a validation can only be validated against already-indexed receipts (deliberate restriction, not hidden).
+- **RF-V12** (Undesired Behavior): If a genesis transaction matches the shape of a §3 genesis but is not bound to the canonical covenant that §4 requires for its type, then the system must not treat it as having created a RepID identity, a Receipt or any Rating Rights. A shape match alone establishes none of them, because CashTokens lets any script mint a category.
+- **RF-V13** (Events): The system must still recognize an `IDENTITY_GENESIS` in legacy form — the NFT issued straight to a P2PKH, with no covenant and no collateral — so that the history of identities minted before the vault remains readable, and must not treat it as creating a RepID identity. Legacy genesis is a recorded fact, not an issuance: it is neither current nor deprecated, and it is not the way a new identity is created.
 
 ## 6. Reputation Interpretation
 
