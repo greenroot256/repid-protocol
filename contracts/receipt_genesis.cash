@@ -5,7 +5,8 @@ pragma cashscript ^0.13.0;
 //
 // ReceiptGenesisValidator is the anti-corruption layer between an
 // app-specific interaction and RepID: it requires the signature of BOTH
-// participants (jointly-signed) and, in a single genesis transaction, mints:
+// participants (jointly-signed), requires those participants to be two
+// distinct addresses, and, in a single genesis transaction, mints:
 //
 //   output 0 — Interaction Receipt: immutable NFT, the on-chain fact that
 //              the interaction happened. It is locked to partyA's P2PKH by
@@ -36,19 +37,30 @@ pragma cashscript ^0.13.0;
 // public interface.
 contract ReceiptGenesisValidator(bytes20 partyAPkh, bytes20 partyBPkh) {
     function mint(pubkey pkA, sig sA, pubkey pkB, sig sB) {
-        // 1) Joint signature: both participants must authorize the
+        // 1) Distinct participants. An interaction with only one party is not an
+        //    interaction between two parties: both Rating Rights would be locked
+        //    to the same P2PKH, and the Receipt would attest that somebody
+        //    interacted with themselves, which is exactly the claim a reputation
+        //    protocol must never let a wallet make about itself.
+        //
+        //    Checked before the signatures because it is a statement about the
+        //    contract's own arguments rather than about this transaction, and
+        //    because failing it should cost nothing.
+        require(partyAPkh != partyBPkh);
+
+        // 2) Joint signature: both participants must authorize the
         //    genesis of the interaction receipt.
         require(hash160(pkA) == partyAPkh);
         require(checkSig(sA, pkA));
         require(hash160(pkB) == partyBPkh);
         require(checkSig(sB, pkB));
 
-        // 2) CashTokens genesis rule: the spent UTXO must come
+        // 3) CashTokens genesis rule: the spent UTXO must come
         //    from vout 0 of its source transaction.
         require(tx.inputs[this.activeInputIndex].outpointIndex == 0);
         bytes32 category = tx.inputs[this.activeInputIndex].outpointTransactionHash;
 
-        // 3) Exactly 4 outputs: Receipt + 2 Rating Rights + change to
+        // 4) Exactly 4 outputs: Receipt + 2 Rating Rights + change to
         //    partyA. No additional hidden minting.
         require(tx.outputs.length == 4);
 

@@ -293,8 +293,12 @@ test('all seven fact types are declared, with validity flags matching SPEC-008',
 
 test('the protocol version is a pre-release, not 1.0.0', () => {
   assert.equal(protocolVersion.protocol, 'repid');
-  assert.equal(protocolVersion.version, '0.1.0');
+  assert.equal(protocolVersion.version, '0.2.0');
   assert.equal(protocolVersion.status, 'pre-release');
+  // SPEC-010 section 4.1: while the version is 0.y.z a breaking change advances
+  // MINOR, so the minor number is what records that 0.2.0 broke something. The
+  // leading zero must not be quietly dropped by an edit that meant to promote.
+  assert.ok(protocolVersion.version.startsWith('0.'));
   assert.ok(
     protocolVersion.promotionTo1_0_0.length > 0,
     'promotion criteria must be stated, otherwise 1.0.0 has no definition',

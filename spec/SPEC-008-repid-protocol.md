@@ -129,6 +129,7 @@ This section defines what **MUST** be recorded on BCH and the invariants that go
 ### 4.3 Receipt
 
 - **RF-O08** (Events): When a receipt is issued, the system must require the joint signature of both parties in the genesis transaction.
+- **RF-O821** (Ubiquity): The receipt's genesis covenant must require `partyA` and `partyB` to be **distinct** addresses. A self-receipt is not a Receipt: both Rating Rights would be locked to the same P2PKH, and the Receipt would attest that a wallet interacted with itself, which is precisely the claim a reputation protocol must not let it make.
 - **RF-O09** (Ubiquity): The receipt's genesis must contain exactly four outputs: receipt (output 0), `partyA`'s Rating Right (output 1), `partyB`'s Rating Right (output 2) and P2PKH change to `partyA` (output 3), all four of the same category except the change, and all without fungibles.
 - **RF-O10** (Ubiquity): The receipt must be locked to `partyA`'s P2PKH and have an empty `nftCommitment`; `partyA`'s Rating Right must have `commitment = partyB's pkh`, and `partyB`'s `commitment = partyA's pkh` (cross relationship).
 - **RF-O11** (Ubiquity): The receipt's change output must be `partyA`'s P2PKH and carry no tokens of the issued category.
@@ -314,8 +315,8 @@ Two facts belong here because they constrain what any implementation may claim:
 - [x] The facts/interpretation boundary is declared, and reputation and the Confidence Index are marked non-normative and owned by the application layer (SPEC-007, in the demo repository).
 - [x] The RF → code → test matrix references real tests and states the limits of each kind of evidence.
 - [x] SPEC-008 prevails over the other specifications in case of conflict (precedence note).
-- [x] Protocol version is explicit and machine-readable (`protocol/protocol-version.json`, SPEC-010), currently `0.1.0` with stated promotion criteria.
+- [x] Protocol version is explicit and machine-readable (`protocol/protocol-version.json`, SPEC-010), currently `0.2.0` with stated promotion criteria.
 - [x] Conformance suite green: `npm test` → 23 tests, 0 failures, running unconditionally. Covenant artifacts reproduce under `npm run artifacts:check`.
 - [x] Every contract artifact recompiles to the committed bytecode, ABI, embedded source and debug bytecode, verified by a negative test that the check actually fails on a modified contract.
-- [ ] An independent implementation has verified these rules end to end. Until it does, the protocol stays at `0.1.0` (SPEC-010 §2).
+- [ ] An independent implementation has verified these rules end to end. Until it does, the protocol stays at `0.y.z` (SPEC-010 §2).
 - [ ] The code complies with `constitution.md`.

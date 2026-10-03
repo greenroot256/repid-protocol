@@ -30,7 +30,7 @@ authoritative copy; §6 describes how the version of an individual fact's
 ```json
 {
   "protocol": "repid",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "status": "pre-release",
   "specification": {
     "normativeCore": "SPEC-008-repid-protocol.md",
@@ -48,12 +48,17 @@ authoritative copy; §6 describes how the version of an individual fact's
 The guide referred to in the first criterion is the external indexer guide that
 ships with the demonstration repository; it is not part of this repository.
 
-> **Why `0.1.0` and not `1.0.0`.** A leading zero is a promise that the
+> **Why `0.2.0` and not `1.0.0`.** A leading zero is a promise that the
 > specification has *not* yet been validated by an independent implementation.
 > That is currently true: the recognition rules have been exercised only by this
 > repository's own code. Claiming `1.0.0` would be a claim the project cannot
 > yet support (see `constitution.md`, Article 4). The promotion criteria above
 > are objective, and moving to `1.0.0` is a one-line change once they are met.
+>
+> `0.2.0` rather than `0.1.1` because `0.2.0` is a breaking change — the receipt
+> covenant now refuses a self-receipt (SPEC-008 RF-O821) and the recognizer stops
+> reporting one (SPEC-009 RF-W55) — and §4 records that, during `0.y.z`, a
+> breaking change advances `MINOR`.
 
 ## 3. What a Version Covers
 
@@ -103,6 +108,38 @@ Typos, formatting, examples, cross-reference fixes. No semantic content.
 > recognized by different versions of the specification can be compared. If a
 > change can alter the reading of a historical transaction, it is `MAJOR`.
 > There is no exception for "small" changes.
+
+### Before `1.0.0` — a breaking change increments `MINOR`
+
+While the version is `0.y.z`, a change that would constitute a `MAJOR` change
+under the rules above MUST increment the **`MINOR`** number and MUST NOT
+increment the `PATCH` number.
+
+The reason is that the leading zero is itself the statement that stability is not
+yet promised. Semantic versioning treats `0.y.z` as initial development, where
+the `MAJOR` field carries no cross-version compatibility guarantee; writing
+`1.0.0` or `2.0.0` during that period would assert a stability the specification
+has explicitly declined to claim (§2). So a breaking change is recorded as the
+next step of a sequence that has not promised stability, rather than in the field
+that means "stable".
+
+What this rule preserves:
+
+- **The distinction survives.** A breaking change is still visibly distinct from
+  an additive one: it advances `MINOR`, where an additive change advances
+  `PATCH`.
+- **Monotonicity survives.** Versions never move backwards, and `PATCH` never
+  moves without an accompanying `MINOR` step.
+- **`1.0.0` stays meaningful.** The first `MAJOR` change made after `1.0.0` is
+  `2.0.0`, and no reader has to wonder whether `1.0.0` was skipped.
+
+What it does not preserve: within `0.y.z`, `MINOR` no longer implies "every
+historical fact is interpretable as before". That guarantee is only restored at
+`1.0.0`, where §7's compatibility rule begins to apply.
+
+`1.0.0` remains reserved for the promotion criteria in `protocol-version.json`.
+A breaking change is never itself a reason to promote, and promotion is never a
+side effect of one.
 
 ## 5. Declaring Implemented Versions
 
@@ -155,7 +192,7 @@ This is deliberate, and it is what makes an unknown format safe:
 - Guessing remains forbidden on its own terms: a wrong field interpretation is
   indistinguishable, to a third party auditing the fact, from a correct one.
 
-The protocol version `0.1.0` covers the **set** of tags and rules, not an
+The protocol version `0.2.0` covers the **set** of tags and rules, not an
 individual fact. Which specification produced a given fact is not written into
 that fact's bytes; it is recovered from the tag, and the tag's revision is what
 ties the fact to the specification that defines it.
@@ -163,9 +200,9 @@ ties the fact to the specification that defines it.
 If a future revision needs to change a payload — more fields, a different
 length, a version string inside the payload — it MUST be published as a **new
 tag with a new revision digit** (`REPID_RATING2`) and MUST NOT reuse an existing
-tag. That is a `MAJOR` change under §4, and it breaks in both directions: a
-recognizer that meets the new tag emits no fact for it until it implements the
-new revision.
+tag. That is a breaking change under §4 — a `MINOR` step while the version is
+`0.y.z`, per §4.1 — and it breaks in both directions: a recognizer that meets the
+new tag emits no fact for it until it implements the new revision.
 
 > **Withdrawn text.** An earlier version of this section specified the payload as
 > `<repid-tag> <protocol-version> <payload...>`, with

@@ -71,7 +71,7 @@ A toolchain that is absent is not evidence of a correct artifact.
 
 ## Current state, stated honestly
 
-The protocol is at **`0.1.0`**, not `1.0.0`. A leading zero says the
+The protocol is at **`0.2.0`**, not `1.0.0`. A leading zero says the
 specification has **not** yet been verified by an independent implementation, and
 that is true today. `protocol/protocol-version.json` lists the objective criteria
 for `1.0.0`; the first is that someone outside this project implements these

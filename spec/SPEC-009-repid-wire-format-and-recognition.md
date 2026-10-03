@@ -332,6 +332,13 @@ SPEC-008 §4.
   have a **non-empty** commitment. The commitments must be the **cross** pair: the
   Rating Right in output 1 commits to `partyB`'s `pkh` and the one in output 2 to
   `partyA`'s `pkh`; otherwise no fact.
+- **RF-W55** (Events): Outputs 1 and 2 must be locked to **two different**
+  P2PKH addresses; a receipt genesis whose Rating Rights name the same party must
+  not be recognized. The cross pair of RF-W40 does not imply this on its own: when
+  both parties are one address, each commitment correctly names the other, so
+  RF-W40 is satisfied by a self-receipt. This is a fact about the outputs and is
+  required regardless of whether binding verification is applied (SPEC-008
+  RF-O821).
 
 ## 10. Conformance
 
@@ -570,7 +577,7 @@ is how a gap goes unnoticed.
 | Vector | Expected | Rule | Test |
 |---|---|---|---|
 | Vault genesis bound to the canonical covenant | `IDENTITY_GENESIS` | RF-W47 | `covenant_binding` |
-| Receipt genesis revealing the canonical script, 164 bytes | `RECEIPT_GENESIS` | RF-W47 | `covenant_binding` |
+| Receipt genesis revealing the canonical script, 168 bytes | `RECEIPT_GENESIS` | RF-W47 | `covenant_binding` |
 | Vault genesis in the 23-byte `hash160` P2SH form | bound | RF-W48 | `covenant_binding` |
 | Redeem script that is not the canonical one | no fact | RF-W49 | `covenant_binding` |
 | Redeem script with the right body, wrong constructor arg | no fact | RF-W49 | `covenant_binding` |
@@ -600,6 +607,7 @@ is how a gap goes unnoticed.
 | Rating Right with swapped commitments | no fact | RF-W40 | `receipt_genesis_shape` |
 | Rating Right with an empty commitment | no fact | RF-W40 | `receipt_genesis_shape` |
 | Receipt with a non-empty commitment | no fact | RF-W40 | `receipt_genesis_shape` |
+| Receipt genesis whose two Rating Rights name the same party | no fact | RF-W55 | `receipt_genesis_shape` |
 
 ### B.2 Still open
 
