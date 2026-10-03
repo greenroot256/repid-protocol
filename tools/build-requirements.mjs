@@ -26,16 +26,17 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { RF_DECLARATION } from './rf-declaration.mjs';
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const specDir = join(root, 'spec');
 const outFile = join(root, 'protocol', 'requirements.json');
 
-// A declaration is a list item whose bold text is a requirement identifier,
-// followed by the EARS keyword in parentheses and a colon. Every one of the 157
-// declarations in spec/ matches this shape; `check-specs` fails the build if a
-// specification ever stops using it, so a silent format change cannot drop
-// requirements from this inventory.
-const DECLARATION = /^\s*[-*]\s+\*\*(RF-[A-Z]?\d+)\*\*\s*\(([^)]+)\)\s*:\s*(\S.*)$/;
+// The shape of a declaration is defined once, in tools/rf-declaration.mjs, and
+// shared with the guard in check-specs.mjs. Two private copies of this pattern
+// could disagree about what parses, and then a requirement the inventory writes
+// is exactly a requirement the guard cannot see coming.
+const DECLARATION = RF_DECLARATION;
 
 // A wrapped declaration continues on the following indented lines. A line that
 // starts a new list item, a new heading, or a new unindented paragraph ends the

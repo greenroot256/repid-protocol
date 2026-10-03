@@ -16,6 +16,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { findUnparseableDeclarations } from './rf-declaration.mjs';
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const specDir = join(root, 'spec');
 const problems = [];
@@ -128,22 +130,17 @@ for (const [file, text] of allText) {
 
 // --- 4b. a requirement declaration that nothing can parse ------------------
 //
-// `build-requirements.mjs` only reads a declaration matching
-// `**RF-<letter>?<digits>** (<Qualifier>):`. A line that looks like a declaration
-// but does not match is not a warning: the requirement is written in the
-// specification and invisible to the inventory, to the traceability suite, and to
-// any consumer reading requirements.json. That is the one failure mode a
-// specification tool must never have, so it is reported rather than skipped.
-//
-// The `(<Qualifier>)` that follows the bold text is what distinguishes a
-// declaration from prose that merely mentions a range like `RF-W28–RF-W34`.
+// `build-requirements.mjs` reads only the lines that match RF_DECLARATION. A
+// line that reads as a declaration but does not match it is not a warning: the
+// requirement is written in the specification and invisible to the inventory,
+// to the traceability suite, and to any consumer reading requirements.json.
+// That is the one failure mode a specification tool must not have, so it is
+// reported rather than skipped. The matcher lives in tools/rf-declaration.mjs
+// so this cannot pass on lines the inventory would have accepted.
 for (const [file, text] of allText) {
-  for (const [index, line] of text.split('\n').entries()) {
-    const bold = line.match(/^\s*[-*]\s+\*\*(RF-[^*]+)\*\*\s*\(/);
-    if (!bold) continue;
-    if (/^RF-[A-Z]?\d+$/.test(bold[1])) continue;
+  for (const { line, identifier } of findUnparseableDeclarations(text)) {
     problems.push(
-      `${file}:${index + 1}  declares ${bold[1]}, which is not an RF identifier. ` +
+      `${file}:${line}  declares ${identifier}, which is not an RF identifier. ` +
         'Expected RF-<letter>?<digits>, as in RF-V12 or RF-O821: a suffixed form is ' +
         'skipped by the inventory silently and the requirement stops existing.',
     );
