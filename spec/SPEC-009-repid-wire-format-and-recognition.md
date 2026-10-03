@@ -400,7 +400,7 @@ Declared explicitly per Constitution Article 4 — none of these is a guarantee:
   §12 rejects the impostor from the bytes alone, and the reference SDK's tests
   do exactly that, both against perturbations of a canonical transaction and
   against transactions a real Chipnet node accepted. What remains inconclusive is
-  narrower and is restated in §12.5.
+  narrower and is restated in §12.6.
 - **The contract `fingerprint` is not a recognition input and not a conformance
   anchor.** It does not change when a contract's logic changes (SPEC-005 §6).
 - **No automated UI coverage is claimed.** The reference demo's console is
@@ -478,7 +478,41 @@ the expected script is fully determined.
   they have no covenant to check. That is correct rather than a gap: they are
   unilateral and need no authorization beyond the spender's own signature.
 
-### 12.3 What binding does not establish
+### 12.3 Which version's bytecode
+
+A canonical bytecode is a property of a protocol version, not of the transaction. The
+receipt covenant changed between 0.1.0 and 0.2.0 (SPEC-008 RF-O821 added a
+`require`, and a `require` is a byte), so a Receipt broadcast under 0.1.0 reveals a
+redeem script that is exactly right for the version that produced it and exactly wrong
+for every later one. Nothing on chain says which version minted it.
+
+- **RF-W56** (Prohibition): An implementation that applies binding verification
+  **MUST** compare the revealed script against the canonical bytecode of the single
+  protocol version it implements, and **MUST NOT** widen the comparison to the
+  bytecodes of other versions in order to obtain a match. The applicable version is a
+  property of the implementation, not something recovered from the transaction.
+
+  The prohibition is not caution about stale bytecode; it is what keeps the version
+  from becoming a sender-chosen parameter. A transaction whose bytes are tested
+  against every version the protocol has ever defined binds under whichever version
+  the sender finds convenient, and the binding then says nothing that the sender did
+  not arrange. An implementation that supports more than one version **MUST** be able
+  to name the applicable one without inspecting the bytes under verification — by
+  configuration, or by some fact outside those bytes — and **MUST NOT** select it by
+  trying until one matches.
+- **RF-W57** (Undesired Behavior): Where a covenant-backed fact was minted under a
+  protocol version whose canonical bytecode differs from the one the implementation
+  implements, binding verification **MUST** emit **no fact** (RF-W49). The
+  implementation **MUST NOT** report it as recognized-but-invalid, and **MUST NOT**
+  present the mismatch as evidence that the transaction was forged, since a correct
+  transaction from an earlier version produces the same bytes.
+
+  This is the intended behaviour and not a defect to be engineered away. The reference
+  SDK implements 0.2.0 only, so the Receipt genesis broadcast on Chipnet under 0.1.0
+  is unrecognized by it; §Annex B.2 carries that as a vector, and the two identity
+  covenants, which no version changed, bind and act as the controls.
+
+### 12.4 What binding does not establish
 
 Binding is a byte comparison, not an execution. It deliberately proves less than
 the VM does, and the difference is stated rather than blurred.
@@ -498,7 +532,7 @@ the VM does, and the difference is stated rather than blurred.
   recognized exactly as §9.1 requires. An implementation that applies binding must
   therefore distinguish "no covenant to check" from "covenant does not match".
 
-### 12.4 Conformance
+### 12.5 Conformance
 
 - **RF-W54** (Options): An implementation **MAY** declare a **binding-verified**
   capability, separate from recognition conformity (RF-W41), asserting that it
@@ -513,7 +547,7 @@ the VM does, and the difference is stated rather than blurred.
   §3–§9 and additionally applying §12 are not in tension; they are two different
   claims.
 
-### 12.5 What remains inconclusive
+### 12.6 What remains inconclusive
 
 Narrowed from §11, and no wider:
 
@@ -620,15 +654,27 @@ is how a gap goes unnoticed.
 | `RATING_ISSUED` with a well-formed payload but **no** tracked right | no fact | RF-W20 |
 | `PLATFORM1` / `TRUST1` whose first input has a non-standard unlocking script | no fact | RF-W17 |
 | A transaction matching two recognizers at once | the earlier recognizer in §7 wins | RF-W23 |
+| `RECEIPT_GENESIS` broadcast under 0.1.0, verified by an implementation of 0.2.0 | no fact | RF-W49, RF-W56, RF-W57 |
 
-**Coverage state**: the reference SDK ships 61 recognition tests
-(`identity_vault_indexer` 5, `issued_rating_and_indexer` 11,
-`platform_confirmation` 4, `trust_link` 3, `op_return_encoding` 23,
-`receipt_genesis_shape` 15). **§3.1 container parsing and §9.2 Receipt genesis
+The last vector is a deliberate negative, not an untested case. The Receipt genesis on
+Chipnet (`6bb06faf`) was minted under the 0.1.0 covenant, whose body was 122 bytes;
+RF-O821 made it 126. An implementation of 0.2.0 that compares against 0.1.0's body
+instead would report it as bound, which RF-W56 forbids and RF-W57 turns into no fact.
+The SDK asserts this against the real transaction — the body does not match, and the
+reason is reported — and keeps the two identity covenants, whose bytes no version
+changed, as the positive controls that prove the check still binds when it should.
+Recognizing it is not pending work; under RF-W56 it is not work this implementation
+does.
+
+**Coverage state**: six reference SDK suites back the §3.1 and §9.2 claims,
+62 tests between them (`identity_vault_indexer` 5, `issued_rating_and_indexer`
+11, `platform_confirmation` 4, `trust_link` 3, `op_return_encoding` 23,
+`receipt_genesis_shape` 16). **§3.1 container parsing and §9.2 Receipt genesis
 shape are therefore verified**, along with RF-W45, which did not exist when this
 annex was first written. The vectors in B.2 remain open. The conformance suite
-in this repository (`conformance/`) covers the fact schema and the constants,
-not container parsing, and is not a substitute for the SDK suite.
+in this repository (`conformance/`) covers the fact schema, the constants and
+the specification tooling, not container parsing, and is not a substitute for
+the SDK suite.
 
 One caveat on how the §9.2 vectors are reached, because it affects what they
 prove. A malformed Receipt cannot be produced through the `receipt_genesis`
