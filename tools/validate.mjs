@@ -106,11 +106,14 @@ export function semanticErrors(fact) {
       }
       break;
 
-    // These two carry no rule the schema or this layer can add: the burn is
-    // valid by the fact of the category disappearing, and the confirmation's
-    // validity is decided by the Receipt index at recognition time.
+    // These three carry no rule the schema or this layer can add: the burn is
+    // valid by the fact of the category disappearing, the confirmation's and
+    // the retraction's validity are decided by the index at recognition time
+    // (the referenced Receipt: PLATFORM_CONFIRMATION SPEC-003 RF-10;
+    // RATING_RETRACTION SPEC-004 RF-07).
     case 'IDENTITY_BURNED':
     case 'PLATFORM_CONFIRMATION':
+    case 'RATING_RETRACTION':
       break;
 
     case 'RECEIPT_GENESIS': {

@@ -50,16 +50,16 @@ test('every fact reconstructed from a real Chipnet run conforms', () => {
   }
 });
 
-test('the real run covers three of the seven fact types', () => {
+test('the real run covers three of the eight fact types', () => {
   // Honest accounting: this run exercised the identity, receipt and rating
-  // path only. Platform confirmation and trust are covered by synthetic
-  // vectors below, not by chain data.
+  // path only. Platform confirmation, trust and retraction are covered by
+  // synthetic vectors below, not by chain data.
   const covered = new Set(realFacts.map((f) => f.type));
   assert.deepEqual(
     [...covered].sort(),
     ['IDENTITY_GENESIS', 'RATING_ISSUED', 'RECEIPT_GENESIS'],
   );
-  assert.equal(constants.factTypes.length, 7);
+  assert.equal(constants.factTypes.length, 8);
 });
 
 test('application annotations are separated from the protocol fact', () => {
@@ -209,6 +209,96 @@ test('a platform confirmation is a well-formed fact even with an unindexed Recei
   assert.equal(validateFact(fact).ok, true);
 });
 
+test('a receipt with a 4-byte interaction context is well-formed (0.4.0)', () => {
+  // SPEC-003 RF-08 / SPEC-009 §9.2: 0x10 · category · roleA · roleB.
+  const context = {
+    interactionCategory: '01',
+    roleA: '02',
+    roleB: '03',
+  };
+  const fact = {
+    type: 'RECEIPT_GENESIS',
+    txid: TXID,
+    receiptCategory: CATEGORY,
+    receiptOwnerPkh: PKH_A,
+    ratingRights: [
+      { outpoint: `${TXID}:1`, ownerPkh: PKH_A, ratesPkh: PKH_B },
+      { outpoint: `${TXID}:2`, ownerPkh: PKH_B, ratesPkh: PKH_A },
+    ],
+    receiptContext: context,
+  };
+  assert.deepEqual(structuralErrors(fact), []);
+  assert.deepEqual(semanticErrors(fact), []);
+  assert.equal(validateFact(fact).ok, true);
+});
+
+test('a receipt with a 36-byte context (hash form) is well-formed (0.4.0)', () => {
+  // SPEC-009 §9.2: 0x11 · category · roleA · roleB · contextHash.
+  const context = {
+    interactionCategory: '01',
+    roleA: '02',
+    roleB: '03',
+    contextHash: 'a'.repeat(64),
+  };
+  const fact = {
+    type: 'RECEIPT_GENESIS',
+    txid: TXID,
+    receiptCategory: CATEGORY,
+    receiptOwnerPkh: PKH_A,
+    ratingRights: [
+      { outpoint: `${TXID}:1`, ownerPkh: PKH_A, ratesPkh: PKH_B },
+      { outpoint: `${TXID}:2`, ownerPkh: PKH_B, ratesPkh: PKH_A },
+    ],
+    receiptContext: context,
+  };
+  assert.equal(validateFact(fact).ok, true);
+
+  // A contextHash without the 4 bare fields is not a valid context.
+  delete context.contextHash;
+  context.contextHash = 'ab'; // wrong width
+  assert.ok(structuralErrors({ ...fact, receiptContext: context }).length > 0);
+});
+
+test('a rating with commentHash is well-formed (0.4.0)', () => {
+  // SPEC-004 RF-08/RF-09 / SPEC-009 §4.2: REPID_RATING2 → commentHash.
+  const fact = rating({ commentHash: 'b'.repeat(64) });
+  assert.equal(validateFact(fact).ok, true);
+
+  // A commentHash of the wrong width is structurally invalid.
+  const wrong = rating({ commentHash: 'c' });
+  assert.ok(structuralErrors(wrong).length > 0);
+});
+
+test('a rating retraction is well-formed and carries no annotation (0.4.0)', () => {
+  // SPEC-004 RF-06/RF-07 / SPEC-009 §4.5: REPID_RETRACT1 → RATING_RETRACTION.
+  const retraction = {
+    type: 'RATING_RETRACTION',
+    txid: TXID,
+    raterPkh: PKH_A,
+    receiptTxid: TXID,
+    valid: false,
+  };
+  assert.equal(validateFact(retraction).ok, true);
+});
+
+test('self-corroboration and retraction rules are declared but not statically checked', () => {
+  // SPEC-003 RF-10 (confirmer must be neither party) and SPEC-004 RF-07
+  // (retraction must reference an existing rating signed by the rater, once)
+  // depend on the index, so the schema cannot express them. They are verified
+  // by the recognizer (task E) and declared in the schema's $comment.
+  const schema = JSON.parse(
+    readFileSync(join(here, '..', 'protocol', 'schemas', 'repid-fact.schema.json'), 'utf8'),
+  );
+  assert.ok(
+    schema.$comment.includes('confirmer to be neither partyA nor partyB'),
+    'schema $comment must declare the self-corroboration rule',
+  );
+  assert.ok(
+    schema.$comment.includes('RATING_RETRACTION'),
+    'schema $comment must declare the retraction rule',
+  );
+});
+
 test('hex fields are lowercase and fixed width', () => {
   assert.ok(structuralErrors(rating({ raterPkh: PKH_A.toUpperCase() })).length > 0);
   assert.ok(structuralErrors(rating({ raterPkh: PKH_A.slice(2) })).length > 0);
@@ -244,8 +334,10 @@ test('declared tag lengths match the actual tag bytes', () => {
   }
 });
 
-test('the three tags are exactly those defined in the specifications', () => {
+test('the five tags are exactly those defined in the specifications', () => {
   assert.equal(constants.opReturnTags.RATING.value, 'REPID_RATING1');
+  assert.equal(constants.opReturnTags.RATING2.value, 'REPID_RATING2');
+  assert.equal(constants.opReturnTags.RETRACT.value, 'REPID_RETRACT1');
   assert.equal(constants.opReturnTags.PLATFORM.value, 'REPID_PLATFORM1');
   assert.equal(constants.opReturnTags.TRUST.value, 'REPID_TRUST1');
 });
@@ -265,7 +357,7 @@ test('field lengths are the protocol byte lengths', () => {
   assert.equal(constants.fieldLengths.SCORE, 1);
 });
 
-test('all seven fact types are declared, with validity flags matching SPEC-008', () => {
+test('all eight fact types are declared, with validity flags matching SPEC-008', () => {
   const declared = constants.factTypes.map((f) => f.type).sort();
   assert.deepEqual(declared, [
     'IDENTITY_BURNED',
@@ -273,6 +365,7 @@ test('all seven fact types are declared, with validity flags matching SPEC-008',
     'IDENTITY_GENESIS',
     'PLATFORM_CONFIRMATION',
     'RATING_ISSUED',
+    'RATING_RETRACTION',
     'RECEIPT_GENESIS',
     'TRUST_LINK',
   ]);
@@ -287,17 +380,21 @@ test('all seven fact types are declared, with validity flags matching SPEC-008',
     'IDENTITY_COLLATERAL_TOP_UP',
     'PLATFORM_CONFIRMATION',
     'RATING_ISSUED',
+    'RATING_RETRACTION',
     'TRUST_LINK',
   ]);
 });
 
 test('the protocol version is a pre-release, not 1.0.0', () => {
   assert.equal(protocolVersion.protocol, 'repid');
-  assert.equal(protocolVersion.version, '0.2.0');
+  assert.equal(protocolVersion.version, '0.4.0');
   assert.equal(protocolVersion.status, 'pre-release');
   // SPEC-010 section 4.1: while the version is 0.y.z a breaking change advances
-  // MINOR, so the minor number is what records that 0.2.0 broke something. The
-  // leading zero must not be quietly dropped by an edit that meant to promote.
+  // MINOR, so the minor number is what records that 0.4.0 added the vault burn
+  // gate, REPID_RATING2, REPID_RETRACT1 and the interaction context as a
+  // superset of 0.3.0 (a compliant 0.4.0 reader still reads every 0.3.0 byte
+  // the same way). The leading zero must not be quietly dropped by an edit
+  // that meant to promote.
   assert.ok(protocolVersion.version.startsWith('0.'));
   assert.ok(
     protocolVersion.promotionTo1_0_0.length > 0,

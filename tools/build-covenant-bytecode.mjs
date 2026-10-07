@@ -15,12 +15,21 @@
 // comparison that does not run the VM.
 //
 // The constructor arguments are part of the deployed script, appended to the
-// bytecode by the compiler. Both covenants take pkh parameters, so every
-// instance has a different script hash: `IdentityVault(bytes20 ownerPkh)` and
-// `ReceiptGenesisValidator(bytes20 partyAPkh, bytes20 partyBPkh)`. The
-// recognizer therefore cannot compare against a single fixed hash, it has to
-// rebuild the expected script from the parties it already derived from the
-// outputs. Recording `constructorInputs` here is what makes that possible.
+// bytecode by the compiler. Every covenant here takes pkh parameters, so every
+// instance has a different script hash: `IdentityVault(bytes20 ownerPkh)`,
+// `RatingRightVault(bytes20 ownerPkh)` and
+// `ReceiptGenesisValidator(bytes20 partyAPkh, bytes20 partyBPkh, bytes20
+// ratingRightHashA, bytes20 ratingRightHashB)`. The recognizer therefore cannot
+// compare against a single fixed hash, it has to rebuild the expected script
+// from the parties it already derived from the outputs. Recording
+// `constructorInputs` here is what makes that possible.
+//
+// ReceiptGenesisValidator's last two arguments are the P2SH32 hashes of
+// RatingRightVault instantiated for each party, not pkhs. CashScript 0.13 cannot
+// reference another contract by name, so the commitment travels through the
+// constructor instead. A recognizer rebuilding this script must supply those two
+// hashes from the canonical RatingRightVault bytecode, which is what
+// `constructorInputs` plus `bytecodeHex` are for.
 //
 // If cashc is unavailable the tool reports SKIPPED, never PASS, and writes
 // nothing. A missing toolchain is not evidence of a correct bytecode.
@@ -97,8 +106,97 @@ if (!compilerVersion.includes(expectedVersion)) {
 const contracts = {};
 let failures = 0;
 
+const FLAT_NOTE =
+  'The deployed script is bytecodeHex followed by the serialized constructor ' +
+  'arguments, in the order declared by constructorInputs. Because both ' +
+  'covenants take pkh parameters, every instance has a different script hash.';
+
+function runCompile(name, sourcePath) {
+  let bytecode;
+  try {
+    bytecode = run(cashc, ['--hex', sourcePath]).trim();
+  } catch (error) {
+    console.log(`FAILED  ${name}: compilation failed`);
+    console.log(`        ${(error.stdout || '').toString().trim() || error.message}`);
+    return { error: true };
+  }
+  if (!/^[0-9a-f]+$/.test(bytecode) || bytecode.length % 2 !== 0) {
+    console.log(`FAILED  ${name}: --hex did not return even-length lowercase hex`);
+    console.log(`        got ${bytecode.length} chars starting "${bytecode.slice(0, 40)}"`);
+    return { error: true };
+  }
+  return { error: false, bytecode };
+}
+
+function leakError(error) {
+  if (error) {
+    failures += 1;
+    return true;
+  }
+  return false;
+}
+
 for (const [name, contract] of Object.entries(constants.contracts)) {
   if (name === 'compiler' || name.startsWith('$')) continue;
+
+  // Versioned covenant: identityVault. Each protocol version has its own
+  // source and artifact; the body recorded in the flat fields is the one named
+  // by `contract.version` (0.3.0). The declared set of bodies is the `versions`
+  // map, never a trial match (SPEC-009 RF-W56/RF-W76).
+  if ('versions' in contract) {
+    const versions = {};
+    let versionsFailed = false;
+    for (const [version, v] of Object.entries(contract.versions)) {
+      const sourcePath = join(root, v.source);
+      if (!existsSync(sourcePath)) {
+        console.log(`FAILED  ${name} ${version}: missing source ${v.source}`);
+        failures += 1;
+        versionsFailed = true;
+        continue;
+      }
+      const result = runCompile(`${name} ${version}`, sourcePath);
+      if (leakError(result.error)) {
+        versionsFailed = true;
+        continue;
+      }
+      const artifact = JSON.parse(readFileSync(join(root, v.artifact), 'utf8'));
+      const bytes = Buffer.from(result.bytecode, 'hex');
+      versions[version] = {
+        fingerprint: v.fingerprint,
+        artifactFingerprint: artifact.fingerprint,
+        bytecodeHex: result.bytecode,
+        bytecodeBytes: bytes.length,
+        hash160BytecodeOnly: hash160(bytes),
+      };
+      console.log(
+        `ok      ${name.padEnd(10)} v${version}  ${String(bytes.length).padStart(4)} bytes  ` +
+          `hash160(bytecode)=${versions[version].hash160BytecodeOnly.slice(0, 16)}...`,
+      );
+    }
+    if (versionsFailed) continue;
+
+    const flat = versions[contract.version];
+    contracts[name] = {
+      source: contract.versions[contract.version].source,
+      artifact: contract.versions[contract.version].artifact,
+      compiler: { name: 'cashc', version: expectedVersion },
+      version: contract.version,
+      versions,
+      fingerprint: contract.versions[contract.version].fingerprint,
+      artifactFingerprint: flat.artifactFingerprint,
+      constructorInputs: JSON.parse(
+        readFileSync(join(root, contract.versions[contract.version].artifact), 'utf8'),
+      ).constructorInputs,
+      bytecodeHex: flat.bytecodeHex,
+      bytecodeBytes: flat.bytecodeBytes,
+      hash160BytecodeOnly: flat.hash160BytecodeOnly,
+      note:
+        'Versioned covenant: the flat fields carry the body of the version named by `version`; ' +
+        'every compiled body is in `versions`, and recognizers must match the declared set there ' +
+        '(SPEC-009 RF-W56/RF-W76), not the flat body alone. ' + FLAT_NOTE,
+    };
+    continue;
+  }
 
   const sourcePath = join(root, contract.source);
   if (!existsSync(sourcePath)) {
@@ -107,24 +205,10 @@ for (const [name, contract] of Object.entries(constants.contracts)) {
     continue;
   }
 
-  let bytecode;
-  try {
-    bytecode = run(cashc, ['--hex', sourcePath]).trim();
-  } catch (error) {
-    console.log(`FAILED  ${name}: compilation failed`);
-    console.log(`        ${(error.stdout || '').toString().trim() || error.message}`);
-    failures += 1;
-    continue;
-  }
+  const result = runCompile(name, sourcePath);
+  if (leakError(result.error)) continue;
 
-  if (!/^[0-9a-f]+$/.test(bytecode) || bytecode.length % 2 !== 0) {
-    console.log(`FAILED  ${name}: --hex did not return even-length lowercase hex`);
-    console.log(`        got ${bytecode.length} chars starting "${bytecode.slice(0, 40)}"`);
-    failures += 1;
-    continue;
-  }
-
-  const bytes = Buffer.from(bytecode, 'hex');
+  const bytes = Buffer.from(result.bytecode, 'hex');
   const artifact = JSON.parse(readFileSync(join(root, contract.artifact), 'utf8'));
 
   // Cross-check against the fingerprint the artifact already reports. The
@@ -138,13 +222,10 @@ for (const [name, contract] of Object.entries(constants.contracts)) {
     fingerprint: contract.fingerprint,
     artifactFingerprint: artifact.fingerprint,
     constructorInputs: artifact.constructorInputs,
-    bytecodeHex: bytecode,
+    bytecodeHex: result.bytecode,
     bytecodeBytes: bytes.length,
     hash160BytecodeOnly: hash160(bytes),
-    note:
-      'The deployed script is bytecodeHex followed by the serialized constructor ' +
-      'arguments, in the order declared by constructorInputs. Because both ' +
-      'covenants take pkh parameters, every instance has a different script hash.',
+    note: FLAT_NOTE,
   };
 
   console.log(
@@ -163,7 +244,11 @@ const document = {
     'Canonical covenant bytecode in hex, generated by tools/build-covenant-bytecode.mjs from the ' +
     'sources named here with the compiler named here. Consumed by a recognizer that wants to ' +
     'verify a fact came from a covenant rather than only matching its output shape. Do not edit ' +
-    'by hand: `npm run bytecode:check` fails when this file is stale.',
+    'by hand: `npm run bytecode:check` fails when this file is stale. Since 0.4.0 the ' +
+    'identityVault entry is versioned (`versions`): the flat bytecode fields carry the body of ' +
+    'the version named by `version` (0.3.0), and every compiled body lives in `versions`. ' +
+    'Recognizers must match against the declared set (SPEC-009 RF-W56/RF-W76), never by trial ' +
+    'matching.',
   generatedFrom: 'contracts/*.cash',
   contracts,
 };

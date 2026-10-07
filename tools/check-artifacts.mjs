@@ -76,69 +76,83 @@ if (!version.includes(expectedCompiler.version)) {
 const work = mkdtempSync(join(tmpdir(), 'repid-artifacts-'));
 let failures = 0;
 
+function verifyArtifact(name, contract) {
+  const sourcePath = join(root, contract.source);
+  const artifactPath = join(root, contract.artifact);
+  if (!existsSync(sourcePath)) {
+    console.log(`FAILED  ${name}: missing source ${contract.source}`);
+    failures += 1;
+    return;
+  }
+
+  const outPath = join(work, `${name}.json`);
+  try {
+    run(cashc, [sourcePath, '--output', outPath]);
+  } catch (error) {
+    console.log(`FAILED  ${name}: compilation failed`);
+    console.log(`        ${(error.stdout || '').toString().trim() || error.message}`);
+    failures += 1;
+    return;
+  }
+
+  const compiled = JSON.parse(readFileSync(outPath, 'utf8'));
+  const committed = JSON.parse(readFileSync(artifactPath, 'utf8'));
+
+  // NOTE: the artifact's `bytecode` field holds the *disassembled* CashScript
+  // mnemonics, not hex. The compiled bytes are not published in the artifact,
+  // so the fingerprint cannot be re-derived here; it is taken from cashc,
+  // which computes it from the real script. What we can verify independently
+  // is that a fresh compile reproduces the committed mnemonic bytecode, ABI,
+  // embedded source and compiler-reported fingerprint.
+  const problems = [];
+  if (compiled.fingerprint !== contract.fingerprint) {
+    problems.push('fresh compile fingerprint differs from constants.json');
+  }
+  if (committed.fingerprint !== contract.fingerprint) {
+    problems.push('committed artifact self-reported fingerprint differs from constants.json');
+  }
+  if (compiled.bytecode !== committed.bytecode) {
+    problems.push('compiled bytecode differs from the committed artifact');
+  }
+  if (JSON.stringify(compiled.abi) !== JSON.stringify(committed.abi)) {
+    problems.push('ABI differs from the committed artifact');
+  }
+  if (compiled.source !== committed.source) {
+    problems.push('embedded source differs from the committed artifact');
+  }
+  if (compiled.debug?.bytecode !== committed.debug?.bytecode) {
+    problems.push('debug bytecode differs from the committed artifact');
+  }
+  if (compiled.contractName !== committed.contractName) {
+    problems.push('contract name differs from the committed artifact');
+  }
+
+  if (problems.length > 0) {
+    console.log(`FAILED  ${name}`);
+    for (const problem of problems) console.log(`          - ${problem}`);
+    console.log(`          fresh compile : ${compiled.fingerprint}`);
+    console.log(`          recorded      : ${contract.fingerprint}`);
+    failures += 1;
+  } else {
+    console.log(`ok      ${name}  ${contract.fingerprint.slice(0, 16)}...`);
+  }
+}
+
 try {
   for (const [name, contract] of Object.entries(constants.contracts)) {
     if (name === 'compiler' || name.startsWith('$')) continue; // metadata, not a contract
 
-    const sourcePath = join(root, contract.source);
-    const artifactPath = join(root, contract.artifact);
-    if (!existsSync(sourcePath)) {
-      console.log(`FAILED  ${name}: missing source ${contract.source}`);
-      failures += 1;
+    // Versioned covenant: identityVault. Every declared version is verified
+    // against its own source/artifact pair (SPEC-009 RF-W56/RF-W76: the declared
+    // set, not a single flat body).
+    if ('versions' in contract) {
+      for (const version of Object.keys(contract.versions)) {
+        verifyArtifact(`${name} ${version}`, contract.versions[version]);
+      }
       continue;
     }
 
-    const outPath = join(work, `${name}.json`);
-    try {
-      run(cashc, [sourcePath, '--output', outPath]);
-    } catch (error) {
-      console.log(`FAILED  ${name}: compilation failed`);
-      console.log(`        ${(error.stdout || '').toString().trim() || error.message}`);
-      failures += 1;
-      continue;
-    }
-
-    const compiled = JSON.parse(readFileSync(outPath, 'utf8'));
-    const committed = JSON.parse(readFileSync(artifactPath, 'utf8'));
-
-    // NOTE: the artifact's `bytecode` field holds the *disassembled* CashScript
-    // mnemonics, not hex. The compiled bytes are not published in the artifact,
-    // so the fingerprint cannot be re-derived here; it is taken from cashc,
-    // which computes it from the real script. What we can verify independently
-    // is that a fresh compile reproduces the committed mnemonic bytecode, ABI,
-    // embedded source and compiler-reported fingerprint.
-    const problems = [];
-    if (compiled.fingerprint !== contract.fingerprint) {
-      problems.push('fresh compile fingerprint differs from constants.json');
-    }
-    if (committed.fingerprint !== contract.fingerprint) {
-      problems.push('committed artifact self-reported fingerprint differs from constants.json');
-    }
-    if (compiled.bytecode !== committed.bytecode) {
-      problems.push('compiled bytecode differs from the committed artifact');
-    }
-    if (JSON.stringify(compiled.abi) !== JSON.stringify(committed.abi)) {
-      problems.push('ABI differs from the committed artifact');
-    }
-    if (compiled.source !== committed.source) {
-      problems.push('embedded source differs from the committed artifact');
-    }
-    if (compiled.debug?.bytecode !== committed.debug?.bytecode) {
-      problems.push('debug bytecode differs from the committed artifact');
-    }
-    if (compiled.contractName !== committed.contractName) {
-      problems.push('contract name differs from the committed artifact');
-    }
-
-    if (problems.length > 0) {
-      console.log(`FAILED  ${name}`);
-      for (const problem of problems) console.log(`          - ${problem}`);
-      console.log(`          fresh compile : ${compiled.fingerprint}`);
-      console.log(`          recorded      : ${contract.fingerprint}`);
-      failures += 1;
-    } else {
-      console.log(`ok      ${name}  ${contract.fingerprint.slice(0, 16)}...`);
-    }
+    verifyArtifact(name, contract);
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

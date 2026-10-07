@@ -25,9 +25,6 @@ pragma cashscript ^0.13.0;
 //                         and ALL the balance returns to the owner's P2PKH.
 //                         The identity loses validity; the owner can mint a
 //                         new one (new genesis, new category) if they want.
-//                         0.4.0: requires the vault to have existed for at
-//                         least `identityVault.minBurnDelayBlocks` (144)
-//                         blocks before it can be destroyed (RF-O831).
 //
 // Design note: the covenant does not remember "how much collateral" in a
 // state variable; it infers it from the value (`satoshis`) of the UTXO
@@ -94,19 +91,6 @@ contract IdentityVault(bytes20 ownerPkh) {
         // Authorization: only the owner may burn their identity.
         require(hash160(pk) == ownerPkh);
         require(checkSig(s, pk));
-
-        // 0.4.0 (RF-O831): minimum lifetime before the collateral can walk
-        // away — counterparties get a window to read the identity first. The
-        // delay binds by covenant, not by indexer: burn is impossible below
-        // this age, whatever an indexer claims. Compiled and VM-verified in
-        // task E: see conformance/identity-vault-burn-delay.test.mjs. The VM
-        // rejects sequences below 144, sequences with the CSV disable flag
-        // set and seconds-unit sequences; cashscript's default disabled
-        // sequence (0xfffffffe) is NOT spendable here, the burn must declare
-        // a relative-lock sequence in block units (bit 31 clear). Value read
-        // from protocol/constants.json `identityVault.minBurnDelayBlocks`
-        // (144).
-        require(this.age >= 144);
 
         bytes category = tx.inputs[this.activeInputIndex].tokenCategory;
 
