@@ -53,7 +53,7 @@ This spec fixes, byte-exactly:
 - `0x` prefixes a **raw byte** literal; all other string values in an
   `OP_RETURN` are UTF-8 (SPEC-008 §4.7).
 - `byte[n]` is a payload of exactly `n` bytes. A length mismatch is never
-  tolerated silently: it produces **no fact** (§4.4).
+  tolerated silently: it produces **no fact** (§4.6).
 - `pkh` is the 20-byte `hash160` of a public key; `txid` is 32 bytes.
 - **Byte order is not uniform**, and this is a normative hazard (SPEC-008 §4.7):
   - Inside a CashScript covenant, `tokenCategory` arrives in **internal** (inverted
@@ -135,14 +135,16 @@ distinguish a well-formed fact from a look-alike.
 
 ## 4. Tag Payloads
 
-Three tags are defined. Their values are published as
-`REPID_RATING_TAG`, `REPID_PLATFORM_TAG` and `REPID_TRUST_TAG` from
-`@repid/protocol`.
+Five tags are defined. Their values are published as
+`REPID_RATING_TAG`, `REPID_RATING2_TAG`, `REPID_PLATFORM_TAG`,
+`REPID_RETRACT_TAG` and `REPID_TRUST_TAG` from `@repid/protocol`.
 
 | Tag | Chunks | Payload | Meaning |
 |---|---|---|---|
 | `REPID_RATING1` | exactly 2 | `byte[1]` | score issued by the rater |
+| `REPID_RATING2` | exactly 3 | `byte[1]` + `byte[32]` | score issued by the rater, followed by the `commentHash` of the off-chain comment |
 | `REPID_PLATFORM1` | exactly 2 | `byte[32]` | `txid` of the validated Receipt |
+| `REPID_RETRACT1` | exactly 2 | `byte[32]` | `txid` of the rated Receipt whose rating is being retracted |
 | `REPID_TRUST1` | exactly 2 | `byte[20]` | `pkh` of the trusted party |
 
 ### 4.1 `REPID_RATING1` — issued rating
@@ -159,7 +161,21 @@ Three tags are defined. Their values are published as
   `valid: false`. It must not drop the fact, and must not clamp the value
   (SPEC-004 RF-04, SPEC-008 RF-O14).
 
-### 4.2 `REPID_PLATFORM1` — platform confirmation
+### 4.2 `REPID_RATING2` — issued rating with comment hash
+
+- **RF-W64** (Events): When a transaction's `OP_RETURN` carries exactly three
+  chunks with tag `REPID_RATING2`, the second chunk of exactly one byte must be
+  interpreted as an unsigned integer `score` and the third chunk of exactly 32
+  bytes as the `commentHash`, and the recognizer must proceed to resolve the
+  rater and ratee per §6 and to emit `RATING_ISSUED` carrying both `score` and
+  `commentHash` (SPEC-008 RF-E05, RF-O826).
+- **RF-W65** (Undesired Behavior): If the `REPID_RATING2` payload is not exactly
+  `byte[1] + byte[32]` — wrong chunk count or wrong chunk lengths — then the
+  recognizer must emit **no fact** (malformed container, per §4.6).
+- The recognizer must never decode, store or judge the comment behind
+  `commentHash`; hash fidelity is off-chain (SPEC-004 RF-09).
+
+### 4.3 `REPID_PLATFORM1` — platform confirmation
 
 - **RF-W09** (Events): When a transaction's `OP_RETURN` carries exactly two
   chunks with tag `REPID_PLATFORM1`, the second chunk of exactly 32 bytes must
@@ -171,8 +187,13 @@ Three tags are defined. Their values are published as
   `valid` must be `true` only if `receiptTxid` is already present in the
   receipt index; otherwise the fact must be emitted with `valid: false`
   (SPEC-008 RF-V08).
+- **RF-W71** (Undesired Behavior): If the confirming `platformPkh` equals
+  `partyA` or `partyB` of the referenced Receipt, the recognizer must emit the
+  `PLATFORM_CONFIRMATION` with `valid: false` (self-corroboration: a party
+  cannot corroborate its own interaction, SPEC-003 RF-10, SPEC-005 RF-26,
+  SPEC-008 RF-O829 / RF-S06 / RF-V17).
 
-### 4.3 `REPID_TRUST1` — trust link
+### 4.4 `REPID_TRUST1` — trust link
 
 - **RF-W12** (Events): When a transaction's `OP_RETURN` carries exactly two
   chunks with tag `REPID_TRUST1`, the second chunk of exactly 20 bytes must be
@@ -183,7 +204,28 @@ Three tags are defined. Their values are published as
   `trusterPkh`, the fact must be emitted with `valid: false` (self-trust,
   SPEC-006, SPEC-008 RF-O17).
 
-### 4.4 Malformed vs invalid
+### 4.5 `REPID_RETRACT1` — rating retraction
+
+- **RF-W66** (Events): When a transaction's `OP_RETURN` carries exactly two
+  chunks with tag `REPID_RETRACT1`, the second chunk of exactly 32 bytes must be
+  interpreted as the `receiptTxid` (display order) of the Receipt whose rating is
+  being retracted, and the recognizer must proceed to resolve the declarer per §5
+  and to emit a `RATING_RETRACTION` fact (SPEC-008 RF-E10, RF-O827).
+- **RF-W67** (Undesired Behavior): If the `REPID_RETRACT1` payload is not exactly
+  32 bytes, or the chunk count is not exactly two, the recognizer must emit
+  **no fact** (malformed container, per §4.6).
+- **RF-W68** (Undesired Behavior): If the referenced rating's Receipt is not in
+  the ratings index, the recognizer must emit `RATING_RETRACTION` with
+  `valid: false` (SPEC-004 RF-07, SPEC-008 RF-O828).
+- **RF-W69** (Undesired Behavior): If the `raterPkh` resolved per §5 is not the
+  `raterPkh` of the `RATING_ISSUED` that the referenced Receipt produced, the
+  recognizer must emit `RATING_RETRACTION` with `valid: false`.
+- **RF-W70** (Undesired Behavior): If the referenced rating is already in the
+  retracted set (RF-W72), the recognizer must emit `RATING_RETRACTION` with
+  `valid: false`. The original `RATING_ISSUED` is never deleted; the chain
+  records, it does not rescind.
+
+### 4.6 Malformed vs invalid
 
 - **RF-W15** (Ubiquity): A conformant recognizer must distinguish a
   **malformed container** (wrong chunk count, wrong payload length, unparseable
@@ -224,21 +266,21 @@ a fact is the signature that spent the value.
 its own outputs. This is by design: the Rating Right is a single-use UTXO, and
 its commitment already encodes the counterparty.
 
-- **RF-W19** (Events): When a `REPID_RATING1` payload is well-formed, the
-  recognizer must resolve `raterPkh` and `rateePkh` by looking up, for each
-  input of the transaction, whether its outpoint (`txid:vout`) is a tracked
-  Rating Right; `raterPkh` must be that right's `ownerPkh` and `rateePkh` must
-  be its `ratesPkh`.
+- **RF-W19** (Events): When a `REPID_RATING1` or `REPID_RATING2` payload is
+  well-formed, the recognizer must resolve `raterPkh` and `rateePkh` by looking
+  up, for each input of the transaction, whether its outpoint (`txid:vout`) is a
+  tracked Rating Right; `raterPkh` must be that right's `ownerPkh` and `rateePkh`
+  must be its `ratesPkh`.
 - **RF-W20** (Undesired Behavior): If no input of the transaction spends a
   tracked Rating Right, the recognizer must emit **no fact**. A bare
-  `REPID_RATING1` `OP_RETURN` with no matching right is a non-fact
-  (SPEC-008 RF-V03).
+  `REPID_RATING1` or `REPID_RATING2` `OP_RETURN` with no matching right is a
+  non-fact (SPEC-008 RF-V03).
 - **RF-W21** (Events): When the Rating Right is resolved, the recognizer must
   remove that outpoint from the tracked set, because its spend implicitly burns
   the NFT and thereby consumes the right (SPEC-008 RF-O12, RF-V05).
 - **RF-W22** (Ubiquity): The recognizer must **not** read `raterPkh` or
-  `rateePkh` from the `OP_RETURN` payload; a rating payload is one byte and
-  carries no addresses by design.
+  `rateePkh` from the `OP_RETURN` payload; a rating payload is `byte[1]` (or
+  `byte[1] + byte[32]` under `REPID_RATING2`) and carries no addresses by design.
 
 ## 7. Recognition Algorithm and Precedence
 
@@ -255,7 +297,13 @@ recognizers can match the same transaction.
   | 3 | receipt genesis | `RECEIPT_GENESIS` | — (then tracks) |
   | 4 | issued rating | `RATING_ISSUED` | tracked Rating Rights |
   | 5 | platform confirmation | `PLATFORM_CONFIRMATION` | receipt index |
-  | 6 | trust link | `TRUST_LINK` | — |
+  | 6 | rating retraction | `RATING_RETRACTION` | ratings index / retracted set |
+  | 7 | trust link | `TRUST_LINK` | — |
+
+  `REPID_RATING1` and `REPID_RATING2` share the rating recognizer (step 4): the
+  tag selects the payload form (§4, RF-W06 vs RF-W64). Retraction (step 6)
+  needs the rating of the referenced Receipt to have been seen, so it follows
+  the rating recognizer; no other recognizer can match its shape.
 
 - **RF-W24** (Events): The identity **spend** must be attempted before the identity
   **genesis**, because a collateral top-up re-emits the same NFT toward the same
@@ -286,6 +334,11 @@ the small state the chain does not keep, or later facts cannot be validated.
 - **RF-W31** (Events): On `RECEIPT_GENESIS`, the indexer must track both Rating
   Right outpoints (`txid:1`, `txid:2`) with their `ownerPkh`/`ratesPkh`, and must
   track the Receipt's `txid` with its owner.
+- **RF-W74** (Events): On `RECEIPT_GENESIS`, when the first output's commitment
+  carries an interaction context (RF-W73), the indexer must also retain it
+  (`interactionCategory`, `roleA`, `roleB`, `contextHash`) alongside the Receipt,
+  because the self-corroboration rule (RF-W71) and any later read of the context
+  depend on it (SPEC-005 RF-23/RF-27).
 - **RF-W32** (Events): On `RATING_ISSUED`, the indexer must remove the consumed
   Rating Right outpoint.
 - **RF-W33** (Undesired Behavior): If a collateral fact does not preserve the NFT
@@ -295,6 +348,11 @@ the small state the chain does not keep, or later facts cannot be validated.
 - **RF-W34** (Ubiquity): The indexer must persist this state so that recognition
   survives a process restart (SPEC-008 RF-V10). The reference implementation uses
   a local JSON file via `createJsonFileStore`.
+- **RF-W72** (Events): On `RATING_RETRACTION`, the indexer must add the
+  referenced rating to the **retracted set** (SPEC-005 RF-27) so that a repeated
+  retraction of the same rating is marked invalid deterministically (RF-W70). The
+  retraction must not remove any tracking: the rating's Rating Right outpoint is
+  already consumed by its own spend.
 
 > **Order-of-appearance is a deliberate restriction, not an oversight**: a
 > `PLATFORM_CONFIRMATION` can only be validated against a Receipt the indexer has
@@ -327,11 +385,12 @@ SPEC-008 §4.
   output carrying a token is not a change and must not be recognized.
 - **RF-W39** (Events): Outputs 0, 1 and 2 must each carry an NFT with
   `capability = none` and `token.amount = 0`, all three sharing **one** category.
-- **RF-W40** (Events): Output 0 (the Receipt) must have an **empty** commitment and
-  be locked to `partyA`'s P2PKH; outputs 1 and 2 (the Rating Rights) must each
-  have a **non-empty** commitment. The commitments must be the **cross** pair: the
-  Rating Right in output 1 commits to `partyB`'s `pkh` and the one in output 2 to
-  `partyA`'s `pkh`; otherwise no fact.
+- **RF-W40** (Events): Output 0 (the Receipt) must have an **empty** commitment
+  (legacy form) or a 4-byte/36-byte **interaction context** commitment (RF-W73),
+  and be locked to `partyA`'s P2PKH; outputs 1 and 2 (the Rating Rights) must
+  each have a **non-empty** commitment. The commitments must be the **cross**
+  pair: the Rating Right in output 1 commits to `partyB`'s `pkh` and the one in
+  output 2 to `partyA`'s `pkh`; otherwise no fact.
 - **RF-W55** (Events): Outputs 1 and 2 must be locked to **two different**
   P2PKH addresses; a receipt genesis whose Rating Rights name the same party must
   not be recognized. The cross pair of RF-W40 does not imply this on its own: when
@@ -339,6 +398,33 @@ SPEC-008 §4.
   RF-W40 is satisfied by a self-receipt. This is a fact about the outputs and is
   required regardless of whether binding verification is applied (SPEC-008
   RF-O821).
+- **RF-W58** (Events): Under `0.3.0`, outputs 1 and 2 (the Rating Rights) must be
+  locked to a **P2SH32** output (`OP_HASH256 <32> OP_EQUAL`), not to P2PKH, and that
+  hash must be the hash of `RatingRightVault` instantiated with the `0x14` constructor
+  prefix and one `bytes20` argument, the holder's `pkh` (SPEC-008 RF-O822/RF-O825).
+  P2SH32 is the form the CashScript compiler emits for a contract address; a P2PKH
+  right, or a P2SH20 one, is the `0.2.x` form and must not be recognized under
+  `0.3.0` (RF-W57). Because a P2SH output carries only a hash, the holder is not on
+  chain at genesis: it is derived from output 0 (a P2PKH to partyA) and the two
+  cross-referencing NFT commitments.
+- **RF-W59** (Events): A spend of a tracked Rating Right must be recognized as
+  `RATING_ISSUED` only where the spent outpoint was one registered as a
+  covenant-locked right (RF-W58) **and** the redeem script revealed by that input
+  satisfies binding verification against the canonical `RatingRightVault` bytecode
+  instantiated with that holder's `pkh` (RF-W47). A failed verification yields no
+  fact (RF-W49), not an unbound one: the "recreate the NFT and rate again" shape is
+  exactly what must not be publishable.
+- **RF-W73** (Events): A context commitment on output 0 — 4 bytes
+  (`0x10 · category · roleA · roleB`) or 36 bytes
+  (`0x11 · category · roleA · roleB · contextHash`) — must be decoded into the
+  `receiptContext` (`interactionCategory`, `roleA`, `roleB`, and `contextHash`
+  for the 36-byte form). The format byte must have high nibble `0x01` and a low
+  nibble whose only defined flag is the `HAS_HASH` bit 0 (so exactly `0x10` and
+  `0x11` are valid); any other value — including a reserved flag or a length of
+  1–3, 5–35 or 37+ bytes, and a 36-byte commitment without `HAS_HASH` — must
+  produce **no fact** (tolerant reading: only the shape that is one of the two
+  fixed forms is a fact). Unknown `category` or `role` bytes stay on the fact
+  raw: they are valid facts whose meaning is application-level (SPEC-008 RF-O10).
 
 ## 10. Conformance
 
@@ -371,6 +457,12 @@ RF-W01–RF-W05 (container parsing) and RF-W38–RF-W40 (Receipt genesis shape) 
 listed here as unverified. They are now covered: 38 tests in the reference SDK
 (`op_return_encoding` 23, `receipt_genesis_shape` 15). RF-W45, the truncation
 companion to RF-W02, was added at the same time and is covered with them.
+
+Lote 2 (`0.4.0`) adds `RF-W64`–`RF-W76` in §4, §6, §7, §8, §9.2 and §12.3. They
+are normative now and **executed** by conformance task E: every row in Annex B.3
+is a test in `b3_0_4_0_vectors` (reference SDK), linked to its RF in the
+traceability manifest. None of them is claimed as covered without that executed
+vector (Constitution Article 3).
 
 ## 11. Known Limitations
 
@@ -405,6 +497,13 @@ Declared explicitly per Constitution Article 4 — none of these is a guarantee:
   anchor.** It does not change when a contract's logic changes (SPEC-005 §6).
 - **No automated UI coverage is claimed.** The reference demo's console is
   verified manually, through the guide shipped with that repository.
+- **`commentHash` and `contextHash` fidelity is not verifiable on-chain.** The
+  recognizer reports the hashes exactly as spent; the correspondence with an
+  actual off-chain comment or context is an application claim (SPEC-004 RF-09).
+- **Self-corroboration is checked only when both facts are indexed.** A
+  `PLATFORM_CONFIRMATION` processed before its Receipt is reported
+  `valid: false` (order dependence, §8), and a platform that changes keys
+  evades the rule (SPEC-003 RF-10; white paper §14).
 
 ## 12. Binding Verification (Optional)
 
@@ -473,10 +572,18 @@ the expected script is fully determined.
   RepID transaction. Overloading the flag would leave a consumer unable to tell a
   reported-but-invalid fact from an unrecognized one.
 - **RF-W50** (Prohibition): An implementation that applies binding verification
-  **MUST NOT** require it of `TRUST_LINK`, `PLATFORM_CONFIRMATION` or
-  `RATING_ISSUED`. Those three are plain P2PKH spends carrying an `OP_RETURN`, and
-  they have no covenant to check. That is correct rather than a gap: they are
-  unilateral and need no authorization beyond the spender's own signature.
+  **MUST NOT** require it of `TRUST_LINK` or `PLATFORM_CONFIRMATION`. Those two are
+  plain P2PKH spends carrying an `OP_RETURN`, and they have no covenant to check.
+  That is correct rather than a gap: they are unilateral and need no authorization
+  beyond the spender's own signature.
+
+  `RATING_ISSUED` was in this list while the Rating Right was a P2PKH output and had
+  no covenant to check. It is not any more. Since `0.3.0` the right is locked under
+  `RatingRightVault` (SPEC-008 RF-O822/RF-O825), the spend that issues a rating is
+  that covenant's only path, and RF-W59 applies binding to it. The prohibition is on
+  demanding a covenant that does not exist, not on verification as such: an
+  implementation applying binding MUST verify a `RATING_ISSUED` whose input **is** a
+  covenant output (RF-W58), and MUST NOT reject one whose input is not.
 
 ### 12.3 Which version's bytecode
 
@@ -508,9 +615,20 @@ for every later one. Nothing on chain says which version minted it.
   transaction from an earlier version produces the same bytes.
 
   This is the intended behaviour and not a defect to be engineered away. The reference
-  SDK implements 0.2.0 only, so the Receipt genesis broadcast on Chipnet under 0.1.0
-  is unrecognized by it; §Annex B.2 carries that as a vector, and the two identity
-  covenants, which no version changed, bind and act as the controls.
+  SDK implements 0.4.0, whose declared covenant set does not include the 0.1.0 receipt
+  body (122 bytes; RF-O821 and RF-O825 replaced it), so the Receipt genesis broadcast
+  on Chipnet under 0.1.0 is unrecognized by it; §Annex B.2 carries that as a vector,
+  and the two identity covenants, which no version changed, bind and act as the
+  controls before 0.4.0.
+- **RF-W76** (Ubiquity): Where an implementation supports **more than one version**
+  of the same covenant — as a `0.4.0` implementation does for the identity vault,
+  whose pre-`0.4.0` body (no burn delay) and `0.4.0` body (with the `age >= 144`
+  burn gate) coexist — the applicable version for each deployed vault MUST be a
+  declared fact of the implementation: configuration, or the version recorded when
+  that identity's genesis was recognized. It MUST NOT be selected by trying each
+  bytecode until one matches (extends RF-W56 to the same-covenant case). The
+  second identity covenant body does not reopen RF-W56: it is recognized only
+  through the declared set, never through trial matching (SPEC-008 RF-O831).
 
 ### 12.4 What binding does not establish
 
@@ -584,13 +702,15 @@ will drift as the reference is refactored.
 | §3.1 push decoding | `parseOpReturn` | 319–332 |
 | §5 declarer derivation | `extractPkhFromUnlocking` | 336–342 |
 | §5 P2PKH extraction | `extractP2PKH` | 38–43 |
-| §9.1 empty commitment | `isEmptyBytes` | 45–49 |
-| §9.1 identity genesis | `tryDecodeIdentityGenesis` | 67–103 |
-| §8.1 identity spend | `tryDecodeIdentitySpend` | 117–176 |
-| §9.2 receipt genesis | `tryDecodeReceiptGenesis` | 178–215 |
-| §4.1 rating | `tryDecodeIssuedRating` | 229–259 |
-| §4.2 platform | `tryDecodePlatformConfirmation` | 267–288 |
-| §4.3 trust | `tryDecodeTrustLink` | 295–314 |
+| §9.1 empty commitment | `recognizeReceiptGenesis` (empty-commitment branch) | `recognize.ts` |
+| §9.1 identity genesis | `recognizeIdentityGenesis` | `recognize.ts` |
+| §8.1 identity spend | `recognizeIdentitySpend` | `recognize.ts` |
+| §9.2 receipt genesis | `recognizeReceiptGenesis` | `recognize.ts` |
+| §4.1 rating | `recognizeRatingIssued` | `recognize.ts` |
+| §4.2 rating2 (`REPID_RATING2`) | `recognizeRatingIssued` (three-chunk form) | `recognize.ts` |
+| §4.3 platform | `recognizePlatformConfirmation` | `recognize.ts` |
+| §4.4 trust | `recognizeTrustLink` | `recognize.ts` |
+| §4.5 retract (`REPID_RETRACT1`) | `recognizeRatingRetraction` | `recognize.ts` |
 | §7 precedence | `indexRawTransaction` | 361–408 |
 | §8 state | `createMemoryStore` / `createJsonFileStore` | 419–544 |
 | §12.1 expected script | `buildExpectedScript` | `covenant.ts` |
@@ -642,6 +762,10 @@ is how a gap goes unnoticed.
 | Rating Right with an empty commitment | no fact | RF-W40 | `receipt_genesis_shape` |
 | Receipt with a non-empty commitment | no fact | RF-W40 | `receipt_genesis_shape` |
 | Receipt genesis whose two Rating Rights name the same party | no fact | RF-W55 | `receipt_genesis_shape` |
+| `0.2.x` receipt genesis (Rating Rights in P2PKH) read by a `0.3.0` implementation | no fact | RF-W57, RF-W58 | `real_chain_binding` |
+| Rating Right recreated as P2PKH in a later transaction | no fact | RF-W58, RF-W59 | `rating_right_covenant` |
+| Rating Right spent by an impostor P2SH script with the same constructor arg | no fact | RF-W49, RF-W59 | `rating_right_covenant` |
+| Rating Right locked to the canonical covenant, spent once with a well-formed rating | bound | RF-W47, RF-W59 | `rating_right_covenant` |
 
 ### B.2 Still open
 
@@ -654,24 +778,55 @@ is how a gap goes unnoticed.
 | `RATING_ISSUED` with a well-formed payload but **no** tracked right | no fact | RF-W20 |
 | `PLATFORM1` / `TRUST1` whose first input has a non-standard unlocking script | no fact | RF-W17 |
 | A transaction matching two recognizers at once | the earlier recognizer in §7 wins | RF-W23 |
-| `RECEIPT_GENESIS` broadcast under 0.1.0, verified by an implementation of 0.2.0 | no fact | RF-W49, RF-W56, RF-W57 |
+| `RECEIPT_GENESIS` broadcast under 0.1.0 or 0.2.x, verified by a `0.3.0` implementation | no fact | RF-W49, RF-W56, RF-W57 |
 
 The last vector is a deliberate negative, not an untested case. The Receipt genesis on
 Chipnet (`6bb06faf`) was minted under the 0.1.0 covenant, whose body was 122 bytes;
-RF-O821 made it 126. An implementation of 0.2.0 that compares against 0.1.0's body
-instead would report it as bound, which RF-W56 forbids and RF-W57 turns into no fact.
-The SDK asserts this against the real transaction — the body does not match, and the
-reason is reported — and keeps the two identity covenants, whose bytes no version
-changed, as the positive controls that prove the check still binds when it should.
-Recognizing it is not pending work; under RF-W56 it is not work this implementation
-does.
+RF-O821 made it 126 and RF-O825 made it a different body again. An implementation of
+0.3.0 that compares against an earlier body instead would report it as bound, which
+RF-W56 forbids and RF-W57 turns into no fact. The SDK asserts this against the real
+transaction — the body does not match, and the reason is reported — and keeps the two
+identity covenants, whose bytes no version changed, as the positive controls that
+prove the check still binds when it should. Recognizing it is not pending work; under
+RF-W56 it is not work this implementation does.
+
+### B.3 `0.4.0` vectors (executed by conformance task E)
+
+| Vector | Expected | Rule | Test |
+|---|---|---|---|
+| `REPID_RATING2` valid (`byte[1] score + byte[32] commentHash`), right tracked | `RATING_ISSUED` with `commentHash` | RF-W64 | `b3_0_4_0_vectors :: issues a RATING_ISSUED with score and commentHash from a well-formed REPID_RATING2` |
+| `REPID_RATING2` with a 1-byte payload | no fact | RF-W65 | `b3_0_4_0_vectors :: emits no fact for a REPID_RATING2 with only the score` |
+| `REPID_RATING2` with two chunks (the `REPID_RATING1` shape) | no fact | RF-W65 | `b3_0_4_0_vectors :: emits no fact for a REPID_RATING2 shaped like the two-chunk REPID_RATING1` |
+| `REPID_RETRACT1` valid 32-byte reference to a known rating signed by the rater | `RATING_RETRACTION` | RF-W66 | `b3_0_4_0_vectors :: a valid retraction of a rating its signer issued` |
+| `REPID_RETRACT1` with a 20-byte payload | no fact | RF-W67 | `b3_0_4_0_vectors :: a retraction whose payload is 20 bytes, not 32` |
+| `REPID_RETRACT1` referencing an unknown rating | `valid: false` | RF-W68 | `b3_0_4_0_vectors :: a retraction of a rating this recognizer never saw` |
+| `REPID_RETRACT1` from a wallet that is not the rater of the referenced rating | `valid: false` | RF-W69 | `b3_0_4_0_vectors :: a retraction spent by a wallet that is not the rating signer` |
+| A second retraction of the same rating | `valid: false` | RF-W70 | `b3_0_4_0_vectors :: a second retraction of an already-retracted rating` |
+| Platform confirming a Receipt it is a party to (`platformPkh` ∈ {partyA, partyB}) | `valid: false` | RF-W71 | `b3_0_4_0_vectors :: a party of the Receipt cannot corroborate its own interaction` (positive control: `... a third party who is neither party still corroborates`) |
+| Receipt commitment of 4 bytes (`0x10`) with unknown `category`/`role` values | `RECEIPT_GENESIS` with raw `receiptContext` | RF-W73 | `b3_0_4_0_vectors :: decodes a 4-byte 0x10 context, keeping unknown values raw` |
+| Receipt commitment of 36 bytes (`0x11`) | `RECEIPT_GENESIS` with `receiptContext.contextHash` | RF-W73 | `b3_0_4_0_vectors :: decodes a 36-byte 0x11 context with its contextHash` |
+| Receipt commitment of 1/2/3/5…35 or 37+ bytes, or a reserved format/flag (`0x00`, `0x11`, `0x1f`) | no fact | RF-W73 | `b3_0_4_0_vectors :: rejects every foreign commitment shape` |
+| Identity vault `burn()` at `age < 144` | rejected by the VM (covenant), not a recognizer test | RF-O831 | `identity-vault-burn-delay` (6 tests, protocol conformance suite) |
+| Identity vault spent with the `0.4.0` body, recorded under its pre-`0.4.0` binding | no fact, per declared set | RF-W76 | `b3_0_4_0_vectors :: rejects a spend revealing the 0.4.0 body for an identity recorded under 0.3.0` |
+
+These vectors are normative in `0.4.0` and were executed by conformance task E
+(2026-10-07): the SDK rows run in the reference SDK suite (`b3_0_4_0_vectors`,
+18 tests, plus the traceability manifest that links each of them to its RF), and
+the `age < 144` row runs in the protocol conformance suite (6 tests, real Bitcoin
+VM). Every row above has been run; the two §4.2 rows that falsify RF-W65 share
+the RATING2 tag with `REPID_RATING1`, which is the point of the veto.
 
 **Coverage state**: six reference SDK suites back the §3.1 and §9.2 claims,
 62 tests between them (`identity_vault_indexer` 5, `issued_rating_and_indexer`
 11, `platform_confirmation` 4, `trust_link` 3, `op_return_encoding` 23,
 `receipt_genesis_shape` 16). **§3.1 container parsing and §9.2 Receipt genesis
 shape are therefore verified**, along with RF-W45, which did not exist when this
-annex was first written. The vectors in B.2 remain open. The conformance suite
+annex was first written. The vectors in B.2 remain open. **Lote 2 (`0.4.0`)
+adds its own executed state**: `b3_0_4_0_vectors` runs every B.3 row through the
+recognizer (`REPID_RATING2`, `REPID_RETRACT1`, self-corroboration,
+`receiptContext` and the version-recorded vault binding), `identity-vault-burn-delay`
+runs the `age < 144` burn rejection on the Bitcoin VM, and the SDK traceability
+manifest links each `RF-W64`–`RF-W76` to its test. The conformance suite
 in this repository (`conformance/`) covers the fact schema, the constants and
 the specification tooling, not container parsing, and is not a substitute for
 the SDK suite.

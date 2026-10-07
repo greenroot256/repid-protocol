@@ -30,7 +30,7 @@ authoritative copy; §6 describes how the version of an individual fact's
 ```json
 {
   "protocol": "repid",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "status": "pre-release",
   "specification": {
     "normativeCore": "SPEC-008-repid-protocol.md",
@@ -45,20 +45,37 @@ authoritative copy; §6 describes how the version of an individual fact's
 }
 ```
 
-The guide referred to in the first criterion is the external indexer guide that
-ships with the demonstration repository; it is not part of this repository.
-
-> **Why `0.2.0` and not `1.0.0`.** A leading zero is a promise that the
+> **Why `0.4.0` and not `1.0.0`.** A leading zero is a promise that the
 > specification has *not* yet been validated by an independent implementation.
 > That is currently true: the recognition rules have been exercised only by this
 > repository's own code. Claiming `1.0.0` would be a claim the project cannot
 > yet support (see `constitution.md`, Article 4). The promotion criteria above
 > are objective, and moving to `1.0.0` is a one-line change once they are met.
+> `0.4.0` is the audited surveillance step of `0.3.0` (SPEC-009 §12.3): it adds
+> the identity-vault burn gate, `REPID_RATING2`, `REPID_RETRACT1` and the
+> interaction context, and it is read as a superset of `0.3.0` — a compliant
+> `0.3.0`-era byte still reads the same under `0.4.0`.
 >
-> `0.2.0` rather than `0.1.1` because `0.2.0` is a breaking change — the receipt
-> covenant now refuses a self-receipt (SPEC-008 RF-O821) and the recognizer stops
-> reporting one (SPEC-009 RF-W55) — and §4 records that, during `0.y.z`, a
-> breaking change advances `MINOR`.
+> `0.3.0` rather than `0.2.1` because `0.3.0` is a breaking change — the Rating
+> Right is now a single-path covenant that destroys the NFT (SPEC-008
+> RF-O12/RF-O823), so `ReceiptGenesisValidator` locks both rights to the
+> `RatingRightVault` P2SH32 hashes instead of a P2PKH, and a receipt from
+> `0.2.x` is no longer recognized (SPEC-009 RF-W56/RF-W57) — and §4 records
+> that, during `0.y.z`, a breaking change advances `MINOR`. `0.2.0` was itself
+> breaking in the same way, because the receipt covenant began refusing a
+> self-receipt (SPEC-008 RF-O821) and the recognizer stopped reporting one
+> (SPEC-009 RF-W55).
+>
+> **On the way to `0.4.0`.** The next breaking change is scheduled as **`0.4.0`**
+> in a single step from `0.3.0`, not as `0.3.1`, because audit lot 2 (like lot 1)
+> is entirely of class `MAJOR` under §4: it adds a variable-length interaction
+> context to the Receipt's NFT commitment (SPEC-003 RF-08, SPEC-009 §9.2), two
+> new `OP_RETURN` tags (`REPID_RATING2`, `REPID_RETRACT1`), a new eighth fact type
+> (`RATING_RETRACTION`), the identity-vault burn delay (SPEC-008) and the
+> self-corroboration rule for platform confirmations (SPEC-003 RF-10). While the
+> version is `0.y.z`, a breaking change advances `MINOR` (§4.1), so the whole
+> batch lands as the next `MINOR` number, exactly once; the version file is
+> updated in task F, never in this audit's diffs.
 
 ## 3. What a Version Covers
 
@@ -68,7 +85,7 @@ agree on** to reach the same conclusion about a transaction:
 | Covered | Not covered |
 |---|---|
 | `OP_RETURN` tags and payload encoding | Reputation models, confidence indices |
-| The field schema of each of the seven facts | Storage, transport, query interfaces |
+| The field schema of each of the eight facts | Storage, transport, query interfaces |
 | Recognition and validation rules (SPEC-005) | Application workflows |
 | The on-chain invariants and covenant interfaces (SPEC-008 §4) | Wallet software, key custody |
 | The score range (`MIN_SCORE`–`MAX_SCORE`) | Any user interface |
@@ -88,7 +105,14 @@ previously recognized shape to stop being recognized:
 - changing an `OP_RETURN` tag or the container layout;
 - changing the score range;
 - changing a covenant interface or an on-chain invariant;
-- changing the recognition order or the precedence rules of SPEC-009.
+- changing the recognition order or the precedence rules of SPEC-009;
+- closing the fact schema (`additionalProperties: false`) or making a previously
+  optional field mandatory;
+- recognizing a form that the protocol previously refused to recognize (a
+  covenant bytecode not previously declared, a payload length that used to be
+  invalid, a commitment that used to be empty): the event is breaking in the
+  opposite direction, because a historical replay now produces a fact where it
+  produced none.
 
 ### Non-breaking — requires `MINOR`
 
@@ -177,8 +201,9 @@ else.
 
 The version of a fact's encoding is carried by **the tag itself**. Every tag in
 `protocol/constants.json` ends in a revision digit — `REPID_RATING1`,
-`REPID_PLATFORM1`, `REPID_TRUST1` — and that digit *is* the version of that tag's
-encoding. A recognizer that has matched a tag therefore already knows which rule
+`REPID_PLATFORM1`, `REPID_TRUST1`, and from `0.4.0` `REPID_RATING2` and
+`REPID_RETRACT1` — and that digit *is* the version of that tag's encoding. A
+recognizer that has matched a tag therefore already knows which rule
 set governs the payload behind it; there is nothing further to read.
 
 This is deliberate, and it is what makes an unknown format safe:
@@ -192,17 +217,19 @@ This is deliberate, and it is what makes an unknown format safe:
 - Guessing remains forbidden on its own terms: a wrong field interpretation is
   indistinguishable, to a third party auditing the fact, from a correct one.
 
-The protocol version `0.2.0` covers the **set** of tags and rules, not an
+The protocol version `0.4.0` covers the **set** of tags and rules, not an
 individual fact. Which specification produced a given fact is not written into
 that fact's bytes; it is recovered from the tag, and the tag's revision is what
 ties the fact to the specification that defines it.
 
 If a future revision needs to change a payload — more fields, a different
 length, a version string inside the payload — it MUST be published as a **new
-tag with a new revision digit** (`REPID_RATING2`) and MUST NOT reuse an existing
-tag. That is a breaking change under §4 — a `MINOR` step while the version is
-`0.y.z`, per §4.1 — and it breaks in both directions: a recognizer that meets the
-new tag emits no fact for it until it implements the new revision.
+tag with a new revision digit** and MUST NOT reuse an existing tag. `0.4.0` does
+exactly this twice: `REPID_RATING2` for score-plus-`commentHash`, and
+`REPID_RETRACT1` for retractions. That is a breaking change under §4 — a `MINOR`
+step while the version is `0.y.z`, per §4.1 — and it breaks in both directions: a
+recognizer that meets the new tag emits no fact for it until it implements the
+new revision.
 
 > **Withdrawn text.** An earlier version of this section specified the payload as
 > `<repid-tag> <protocol-version> <payload...>`, with
