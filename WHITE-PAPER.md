@@ -5,7 +5,7 @@ and leaves the judgment to you.**
 
 | | |
 |---|---|
-| **Protocol version** | `0.1.0` (pre-release) |
+| **Protocol version** | `0.4.0` (pre-release) |
 | **Network** | Bitcoin Cash (BCH) |
 | **Technologies** | CashTokens, CashScript |
 | **Status** | Normative specification, canonical covenants and a conformance suite |
@@ -143,13 +143,17 @@ synchronized in both directions. A change in behaviour without a change in
 ## 4. Who is involved
 
 RepID defines seven entities. Six of them are anchored on-chain — either as a
-locked token or as a transaction that spends one. One, the interaction itself,
-is metadata that never touches the chain.
+locked token or as a transaction that spends one. The interaction itself is
+application metadata: the interaction never touches the chain. What CAN touch
+the chain, since `0.4.0`, is a small **interaction context** inside the Receipt's
+commitment — an interaction category, both roles and, optionally, a context hash
+(SPEC-008 RF-O10, SPEC-009 §9.2) — that names the *kind* of interaction and each
+party's role while keeping whatever the parties actually exchanged off-chain.
 
 | Entity | What it is | Where it lives | Key data |
 |---|---|---|---|
 | **Identity** | An immutable token plus collateral in BCH | A covenant output (vault), or in the legacy form directly in a P2PKH output | category, owner hash, collateral |
-| **Interaction** | Metadata about what two parties did | **Off-chain only** | roles, both party hashes, a protocol reference |
+| **Interaction** | Metadata about what two parties did; the interaction itself never enters the chain | Off-chain; since `0.4.0` the Receipt MAY anchor its context (category + roles [+ contextHash]) | roles, both party hashes, a protocol reference |
 | **Receipt** | An immutable token proving an interaction was acknowledged | Output 0 of its genesis transaction | category, holder (= party A) |
 | **Rating Right** | A single-use token, one per party per receipt | Outputs 1 and 2 of the receipt's genesis | who holds it, who it entitles them to rate |
 | **Rating** | A score given by spending a Rating Right | The transaction that spends it | rater, ratee, score |
@@ -173,6 +177,8 @@ transaction.
 - Each receipt creates **exactly two Rating Rights** — one for each party, and
   each naming the *other* party as the one it entitles them to rate.
 - A Rating Right produces **at most one rating**: spending it consumes it.
+- Since `0.4.0`, a rating can be **retracted** unilaterally by the rater: the
+  retraction is a new fact, not an edit of the original rating.
 - An identity can receive and issue any number of ratings, validations and
   trust links. The protocol sets no quantity limit.
 - A Trust Link is **unilateral**. It requires neither the other party's consent
@@ -244,7 +250,7 @@ RepID is deliberately layered, so that a minimal adopter can ignore half of it:
 
 | Layer | Contents |
 |---|---|
-| **Core** | Identity (genesis, top-up, burn), Receipt, Rating Right, Rating |
+| **Core** | Identity (genesis, top-up, burn), Receipt, Rating Right, Rating (`RATING_ISSUED` and, since `0.4.0`, `RATING_RETRACTION`; a `commentHash` is part of `RATING_ISSUED`, not a separate fact) |
 | **Extensions** | Platform confirmation, Trust Link |
 | **Outside the protocol** | Reputation, confidence indices, anti-sybil rules, user interfaces, storage |
 
@@ -298,7 +304,10 @@ identity.
 Since `0.4.0`, `burn` also requires the vault to have lived for **144 blocks**
 (about a day on BCH) before it can be destroyed, giving counterparties a window
 to read the identity before its collateral can walk away. The delay is enforced
-by the covenant itself (`this.age`, SPEC-008 RF-O831), not by the indexer.
+by the covenant itself (`this.age`, SPEC-008 RF-O831), not by the indexer. It
+applies **only to `burn`**: `increaseCollateral` is never delayed, and a top-up
+itself **restarts the clock**, because the age is the age of the UTXO being
+spent and the re-lock creates a new output (SPEC-008 RF-O831).
 
 ### 6.3 `IdentityGenesisValidator` — the legacy form
 
@@ -315,8 +324,8 @@ signatures**, and it creates three tokens at once:
 | Output | What it is | Commitment |
 |---|---|---|
 | 0 | The receipt itself, locked to party A | *empty*, or an interaction context (`0.4.0`) |
-| 1 | Party A's Rating Right, locked to party A | party B's public-key hash |
-| 2 | Party B's Rating Right, locked to party B | party A's public-key hash |
+| 1 | Party A's Rating Right, locked to `RatingRightVault` (the P2SH32 address derived from party A's pkh) | party B's public-key hash |
+| 2 | Party B's Rating Right, locked to `RatingRightVault` (the P2SH32 address derived from party B's pkh) | party A's public-key hash |
 | 3 | Change back to party A (four-output form only; a three-output genesis has no change) | *no tokens* |
 
 The **cross pattern** in the commitments is the mechanism: a Rating Right is
@@ -329,17 +338,21 @@ a 36-byte form (`0x11` — adding a context hash). The category and the roles
 travel on-chain; what those bytes *mean* for the two parties stays off-chain,
 declared by the interaction protocol (SPEC-009 §9.2, RF-W73).
 
-No custom "consume once" logic is needed for the Rating Rights. They are
-single-output tokens locked inside the **`RatingRightVault`** covenant, a P2SH32
-contract address (SPEC-008 RF-O822/RF-O825), and Bitcoin Cash already forbids
-spending a UTXO twice. **Spending the right *is* the rating, and it *is* the
-destruction of the right** — one rating per party per interaction, enforced by
-the chain itself rather than by extra covenant logic.
+The Rating Rights are not plain P2PKH outputs. Each one is locked inside the
+**`RatingRightVault`** covenant, a P2SH32 contract address (SPEC-008
+RF-O822/RF-O825), and the covenant exposes **exactly one spend path**, which
+destroys the NFT (SPEC-008 RF-O823). The "one rating per party per interaction"
+guarantee is therefore a **covenant rule**, not a single-spend assumption
+(SPEC-008 RF-S01): the chain's single-spend rule alone would not stop a P2PKH
+holder from re-issuing the token in its own spend. **Spending the right *is* the
+rating, and it *is* the destruction of the right.**
 
 ### 6.5 Ratings, platform confirmations and trust links
 
-These three do not need a covenant. Each one is a normal P2PKH spend that
-includes a small, precisely formatted data output:
+The **rating** spends the `RatingRightVault` covenant introduced above (SPEC-008
+RF-O823). The other three — the **retraction**, the **platform confirmation**
+and the **trust link** — need no covenant: each one is a normal P2PKH spend of
+the declarer's own funds that includes a small, precisely formatted data output:
 
 | Fact | Who spends | What it declares |
 |---|---|---|
@@ -423,6 +436,11 @@ The comment behind a `commentHash` is **never on-chain**: it is delivered by
 agreement between the rater and whoever reads the fact, and the protocol commits
 to its hash so that "this comment was attached to this score" is checkable
 without being forged by whoever last touched the comment (SPEC-004 RF-08/RF-09).
+The preimage is normative and salted:
+`commentHash := SHA256('REPID-CMT-V1' ‖ raterPkh ‖ saltLen ‖ salt ‖ comment)`
+with a 16–32 byte `salt` that travels with the comment, never on-chain (SPEC-004
+RF-08/RF-09, `protocol/constants.json`). The salt is what keeps the comment's
+hash unguessable when the text is short or predictable.
 
 ### 7.3 Who declared a platform confirmation or a trust link?
 
@@ -454,7 +472,16 @@ receipt in output 0 must have an **empty** commitment (the legacy form) or, in
 commitment (`RECEIPT_GENESIS` then carries `receiptContext`), and be locked to
 party A; the Rating Rights in outputs 1 and 2 must have **non-empty**
 commitments forming the **cross** pair. A fourth output carrying a token is not
-change and is not recognized.
+change and is not recognized. The context commitment's format byte has a **fixed
+high nibble `0x01`** and a low nibble whose only defined flag is bit 0
+(`HAS_HASH`), so exactly `0x10` (4-byte form) and `0x11` (36-byte form) are
+valid; any other byte, or any other commitment length (1–3, 5–35, 37+ bytes) is
+**not a fact** (SPEC-009 RF-W73). The roles are not free text either: `roleA` is
+the role of the party that locks output 0 (`receiptOwnerPkh`) and `roleB` the
+role of the other party from the cross pair, so the commitment always stays
+within the two parties already present in the Receipt (SPEC-008 RF-O10) — and
+unknown `category`/`role` bytes are still a valid fact with an application-level
+meaning, never a rejection.
 
 > Source: `spec/SPEC-009-repid-wire-format-and-recognition.md` §3–§6, §9;
 > `protocol/constants.json`; `spec/SPEC-008-repid-protocol.md` §4.7.
@@ -502,6 +529,8 @@ small but mandatory:
 - **Live Rating Rights** — which outputs are outstanding, and who they entitle.
 - **Indexed receipt transaction ids** — so a platform confirmation can be checked.
 - **Tracked vault outputs** — so a top-up can be distinguished from a mint.
+- **Issued ratings** — which rating each spent Rating Right produced, so a
+  retraction can reference it (SPEC-008 RF-O12's "issued ratings" ledger).
 - **Receipt interaction contexts** — so the `0.4.0` context of a
   `RECEIPT_GENESIS` stays available to later facts.
 - **The retracted ratings set** — so a repeated retraction of the same rating is
@@ -582,11 +611,16 @@ RepID that is deliberately *not* regulated.
 eight facts as defined, an interpreter can compute the number of ratings an
 identity has received; how many came from parties that themselves hold
 identities; how many of those ratings were later retracted by their rater; how
-much collateral an identity has committed and how long it has held; how many
-counterparties have declared trust in an identity and how many trust declarations
-it has itself made; how many interactions were corroborated by a platform; and
-which of those interactions involved a repeat counterparty. Each of these is
-arithmetic over facts that already exist.
+much collateral an identity has committed and how long it has held it;
+how many counterparties have declared trust in an identity and how many trust
+declarations it has itself made; how many interactions were corroborated by a
+platform; and which of those interactions involved a repeat counterparty. Each
+of these is arithmetic over facts that already exist. The computation can also
+break down **by interaction category** and **by role** — since `0.4.0` the
+receipt carries both on-chain (`receiptContext`), so e.g. an interpreter can
+separate the ratings received as a "rider" from those received as a "client",
+or average only the interactions of one declared category (SPEC-008 RF-E11,
+RF-V15).
 
 **What is not possible, and would require changing the protocol rather than
 writing a new application:** storing a reputation number on-chain, weighting
@@ -614,15 +648,15 @@ not solve at all.
 
 | Abuse vector | What the protocol guarantees on-chain | What is left to interpretation | What remains unsolved |
 |---|---|---|---|
-| **Sybil** | Nothing beyond network fees and, optionally, identity collateral | Weighing by identity or collateral | Any number of identities can still be created |
+| **Sybil** | Nothing beyond network fees and, optionally, identity collateral; since `0.4.0` an identity cannot be destroyed within 144 blocks of minting or of its last top-up, so at least that window exists to read it before its collateral can walk away | Weighing by identity or collateral | Any number of identities can still be created |
 | **Spam** | Only the cost of fees | Filtering or deprioritizing by local criteria | There is no protocol rate limit |
 | **Self-promotion** | A trust declaration about oneself is marked invalid | — | Two colluding parties can rate each other, which is not direct self-rating |
 | **Collusion** | Ratings require a mutually-signed receipt and a single-use right | Detection and weighting | A real interaction cannot be distinguished on-chain from a simulated one |
 | **Reputation farming** | One rating per right, enforced by single-spend | Weighting by counterparty, recency, collateral | Nothing prevents several interactions that are each worth farming |
-| **Selective acceptance** | A non-existent receipt produces no facts | — | If a party simply refuses to sign, there is no on-chain recourse |
+| **Selective acceptance** | A non-existent receipt produces no facts | Flagging a pattern of one party always declining to sign | If a party simply refuses to sign, there is no on-chain recourse |
 | **Rating manipulation** | The score range is fixed; out-of-range values are marked invalid | Judging the intent behind a rating | The protocol cannot verify that a score is truthful |
-| **Retracting a rating** | A retraction is itself a fact: who retracted, which rating, and when, signed by the original rater | Weighing why a rating was retracted | A false retraction is as unverifiable as a false rating |
-| **Self-corroboration** | Since `0.4.0`, a platform confirming a receipt it is a party to is marked invalid | — | A second key under the same operator still evades the rule |
+| **Retracting a rating** | A retraction is itself a fact: who retracted, which rating, and when, signed by the original rater | Weighing *why* a rating was retracted (pressure, payment, disagreement) | A false retraction is as unverifiable as a false rating |
+| **Self-corroboration** | Since `0.4.0`, a platform confirming a receipt it is a party to is marked invalid | An interpreter may discount the platform confirmations of a platform that has a weak corroboration record | A second key under the same operator still evades the rule |
 
 The rule that follows from this table is part of the protocol's conformity
 requirements: **an implementation may not present an anti-sybil, anti-spam or
@@ -640,7 +674,7 @@ A transaction, once broadcast, may be interpreted for years. Therefore **the
 meaning of a historical event must never change** — that is the requirement
 versioning exists to protect.
 
-The protocol version is a three-part semantic version, `0.1.0`, recorded in
+The protocol version is a three-part semantic version, `0.4.0`, recorded in
 machine-readable form so that an implementation can check what it is speaking
 to. An implementation must declare the set of protocol versions it supports and
 must fail loudly rather than operate on a version it does not implement.
@@ -694,7 +728,7 @@ read under the rules that produced them. There is no on-chain migration, because
 the chain is immutable by design. A new `MAJOR` must ship alongside the previous
 one for at least one release cycle.
 
-### Why the version is `0.1.0` and not `1.0.0`
+### Why the version stays below `1.0.0`
 
 The leading zero is a promise, not modesty. `1.0.0` is reserved for a version
 that has been validated by an implementation outside this project, and
@@ -742,15 +776,15 @@ reputation model — must not change protocol results.
 
 `npm test` runs the first four.
 
-**Measured on 2026-10-01:**
+**Measured on 2026-10-07:**
 
 | Check | Result |
 |---|---|
-| `npm test` | **23 tests, 23 passed, 0 failures**, running unconditionally |
-| `npm run specs:check` | 9 specifications, 157 requirement declarations under 128 distinct identifiers, no dead references |
-| `npm run requirements:check` | 157 declarations extracted, inventory in sync |
-| `npm run encoding:check` | 35 text files, valid UTF-8, no mojibake, no partly rewritten file |
-| `npm run artifacts:check` | All three contract artifacts reproduce exactly, with `cashc` 0.13.2 |
+| `npm test` | **56 tests, 56 passed, 0 failures**, running unconditionally |
+| `npm run specs:check` | 9 specifications, 216 requirement declarations, no dead references |
+| `npm run requirements:check` | 216 declarations extracted, inventory in sync |
+| `npm run encoding:check` | 49 text files, valid UTF-8, no mojibake, no partly rewritten file |
+| `npm run artifacts:check` | All contract artifacts reproduce exactly: four covenant sources, five compiled artifacts (identityVault 0.3.0 and 0.4.0 verified separately), with `cashc` 0.13.2 |
 
 `artifacts:check` is designed so that an absent toolchain can never masquerade
 as a pass: it reports `SKIPPED`, never `PASS`, when the compiler cannot be
@@ -785,9 +819,17 @@ one product.
 **The covenants are normative and live in the protocol repository.** Their
 CashScript sources are the canonical text, compiled with `cashc` 0.13.2:
 
-- `contracts/identity_vault.cash` — `mint`, `increaseCollateral`, `burn`
+- `contracts/identity_vault.cash` — `mint`, `increaseCollateral`, `burn`;
+  versioned since `0.4.0` (`contracts/identity_vault_0_3_0.cash` frozen and
+  `contracts/identity_vault.cash` adding the burn delay)
 - `contracts/receipt_genesis.cash` — `mint`, requiring both parties' signatures
+- `contracts/rating_right.cash` — the `RatingRightVault` that each Rating Right
+  is locked into; its single spend path destroys the token (SPEC-008
+  RF-O822/RF-O823)
 - `contracts/identity_genesis.cash` — the legacy single-use form
+
+Four covenant sources, five compiled artifacts (the identity vault's two
+versions are verified separately, SPEC-008 RF-W56/RF-W76).
 
 ### Evidence of execution
 
@@ -798,19 +840,53 @@ two Rating Rights, and both parties rating each other. Those real transaction
 identifiers are the source of the fixture the schema is checked against — the
 suite tests real bytes, not hand-written examples.
 
-**Recognition coverage, measured 2026-10-01:** the recognition SDK's suite
-reports **93 tests, 93 passed, 0 failures** across 11 files, all running
-unconditionally with no network access. Within it, 38 tests cover
-data-output container parsing and receipt-genesis shape recognition, the two
-areas that had previously been specified but unverified.
+**Recognition coverage, measured 2026-10-07:** the recognition SDK's suite
+reports **150 tests, 150 passed, 0 failures** across 15 files, all running
+unconditionally with no network access. Within it, 23 tests cover data-output
+container parsing and 16 cover the receipt-genesis shape (including the `0.4.0`
+interaction-context commitment), the areas that had previously been specified
+but unverified.
 
-**The demonstration application, measured 2026-10-01:** 35 tests pass and 38 are
-skipped. The skipped tests mint a genesis and therefore require funded wallets on
-a real test network; they are declared unverified rather than counted as passing.
+**The demonstration application, measured 2026-10-07:** 73 tests across 4 files;
+35 pass unconditionally and 38 are skipped. The skipped tests mint a genesis and
+therefore require funded wallets on a real test network; they are declared
+unverified rather than counted as passing.
 
 **Real-VM end-to-end runs** against the Bitcoin Cash test network are performed
 by dedicated scripts in the demonstration repository, which exercise issuance
 against the actual Virtual Machine rather than a simulator.
+
+**What is proven per fact type — the honest matrix.** A fact can be covered by
+three different kinds of evidence, and they are not interchangeable. "Covenant"
+means the on-chain invariant was executed by the real Virtual Machine on Chipnet
+and asserted (not merely observed). "Indexer" means the recognizer is exercised
+by the conformance suite's unit tests. "Fixture" means real broadcast bytes are
+stored as conformance vectors. A box says `✓` only where that evidence exists
+today:
+
+| Fact type | Covenant | Indexer | Real fixture |
+|---|---|---|---|
+| Identity genesis | `✓` (vault `mint`) | `✓` | `✓` |
+| Collateral top-up | `✓` (`increaseCollateral`) | `✓` | — |
+| Identity burn | `✓` (`burn`) | `✓` | — |
+| Receipt genesis | `✓` | `✓` | `✓` |
+| Rating issued | `✓` (Rating Right spend) | `✓` | `✓` |
+| Rating retraction | `—` (specified and VM-tested, not yet run on Chipnet) | `✓` | — |
+| Platform confirmation | `✓` (P2PKH spend) | `✓` | — |
+| Trust link | `✓` (P2PKH spend) | `✓` | — |
+
+Seven of the eight fact types have therefore been executed by the real Virtual
+Machine. **Rating retraction is the exception**: it is the newest fact (`0.4.0`),
+its spend is a plain P2PKH (no covenant to compile), it is fully covered by the
+recognizer's tests, but the demonstration application does not expose a
+retraction endpoint yet, so no real broadcast transaction has been produced for
+it. Its on-chain rule is the same as the other P2PKH spends — a signature the
+network enforces and a data output the indexer reads — but that equivalence has
+not been turned into real-VM evidence. The four non-fixture rows show the other
+gap: their obligations and shapes are specified and tested, but the reference
+implementation has not retained a real broadcast transaction for them as a
+conformance fixture. The `conformance/fixtures/real-chain-facts.json` file
+records which rows are fixtures today, mechanically.
 
 ### What has not been proven
 
@@ -832,7 +908,7 @@ Stated plainly, because the project's own rules require it:
 - The demonstration application's **user interface is verified manually only.**
   No automated interface test is claimed.
 - **No independent implementation has verified these rules.** This is the
-  reason the version is `0.1.0`.
+  reason the version stays below `1.0.0`.
 
 > Source: `REFERENCE-IMPLEMENTATION.md`; `spec/SPEC-009-repid-wire-format-and-recognition.md`
 > §10.1, Annex B; `spec/SPEC-008-repid-protocol.md` Annex A, Annex B.2;
@@ -860,10 +936,17 @@ they are the boundaries of what RepID claims. None of them is a guarantee.
   produce the bytes.** What makes a fact genuine is the covenant and the
   network's script execution; the indexer only reads what survived them.
 - Order of appearance matters, so a platform confirmation seen before its
-  receipt is reported invalid.
+  receipt is reported invalid (and, since `0.4.0`, so is a rating retraction
+  seen before the rating it retracts).
 - `commentHash` and `contextHash` fidelity is not verifiable on-chain: the
   recognizer reports the hashes exactly as spent; the correspondence with an
-  actual off-chain comment or context is an application claim.
+  actual off-chain comment or context is an application claim. The two hashes
+  differ in one real respect: the `commentHash` preimage is **normative and
+  salted on purpose** (so anyone who holds the off-chain comment can prove it
+  was the one committed, without the hash being guessable from a short text),
+  while the `interaction contextHash` deliberately has **no published preimage
+  format** — the protocol binds context bytes to the receipt but assigns no
+  meaning to them, and the recognizer never decodes them.
 
 **About evidence and tooling**
 
@@ -942,9 +1025,9 @@ npm run artifacts:check   # every covenant recompiles to the committed artifact
 ### Source of the numerical claims in this document
 
 Every figure quoted above was measured, not estimated. The protocol's own checks
-(23 tests, 9 specifications, 157 requirement declarations under 128 distinct
-identifiers, three reproducing artifacts) were run on 2026-10-01. The recognition
-suite figure (93 tests in 11 files) and the demonstration application's figures
+(56 tests, 9 specifications, 216 requirement declarations, five reproducing
+artifacts from four covenant sources) were run on 2026-10-07. The recognition
+suite figure (150 tests in 15 files) and the demonstration application's figures
 (35 passing, 38 skipped in 4 files) were measured the same day in their own
 repositories. The real-network
 provenance — Chipnet, five facts across three fact types, 2026-09-27 — is

@@ -402,16 +402,40 @@ test('the protocol version is a pre-release, not 1.0.0', () => {
   );
 });
 
-test('contract fingerprints are recorded for all three covenants', () => {
+test('contract fingerprints are recorded for every declared covenant', () => {
   // Shape check only. The fingerprint is NOT a conformance anchor: it does not
   // change when a contract's logic changes (see tools/check-artifacts.mjs, which
   // is what actually establishes conformance).
-  for (const name of ['identityGenesis', 'identityVault', 'receiptGenesis']) {
-    const contract = constants.contracts[name];
-    assert.match(contract.fingerprint, /^[0-9a-f]{64}$/, `${name} fingerprint`);
-    assert.match(contract.source, /^contracts\/.+\.cash$/);
-    assert.match(contract.artifact, /^artifacts\/.+\.json$/);
+  //
+  // SPEC-008 RF-W56/RF-W76 (versioned vault): the identityVault is a versioned
+  // covenant, so every declared version must carry its own source/artifact pair.
+  // The total is 4 covenant sources and 5 artifacts (identityVault 0.3.0 + 0.4.0).
+  for (const [name, contract] of Object.entries(constants.contracts)) {
+    if (name === 'compiler' || name.startsWith('$')) continue;
+    if ('versions' in contract) {
+      assert.ok(Object.keys(contract.versions).length >= 2,
+        `${name} must declare at least the frozen 0.3.0 and the current version`);
+      for (const [version, body] of Object.entries(contract.versions)) {
+        assert.match(body.fingerprint, /^[0-9a-f]{64}$/, `${name} ${version} fingerprint`);
+        assert.match(body.source, /^contracts\/.+\.cash$/);
+        assert.match(body.artifact, /^artifacts\/.+\.json$/);
+      }
+    } else {
+      assert.match(contract.fingerprint, /^[0-9a-f]{64}$/, `${name} fingerprint`);
+      assert.match(contract.source, /^contracts\/.+\.cash$/);
+      assert.match(contract.artifact, /^artifacts\/.+\.json$/);
+    }
   }
+  const flat = [];
+  for (const [name, contract] of Object.entries(constants.contracts)) {
+    if (name === 'compiler' || name.startsWith('$')) continue;
+    if ('versions' in contract) {
+      flat.push(...Object.values(contract.versions));
+    } else {
+      flat.push(contract);
+    }
+  }
+  assert.equal(flat.length, 5, '4 covenant sources, 5 compiled artifacts');
   assert.equal(constants.contracts.compiler.name, 'cashc');
   assert.equal(constants.contracts.compiler.version, '0.13.2');
 });

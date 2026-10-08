@@ -1,6 +1,6 @@
 {
   "name": "repid-protocol",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "description": "RepID protocol specification: facts, wire format, recognition rules and on-chain invariants. This repository contains no runtime code.",
   "license": "MIT",
