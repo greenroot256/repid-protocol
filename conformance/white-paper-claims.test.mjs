@@ -66,8 +66,15 @@ test('the white paper states the current protocol version', () => {
 test('the white paper reproduces the derived repository counts', () => {
   const specs = readdirSync(join(root, 'spec'))
     .filter((f) => f.startsWith('SPEC-') && f.endsWith('.md')).length;
-  const artifacts = flatContracts().length;
-  const covenantSources = new Set(flatContracts().map((c) => c.source)).size;
+  const flat = flatContracts();
+  // "Covenant sources" is the number of distinct covenant contracts (identityVault
+  // counts once across its bodies); "compiled artifacts" is the number of distinct
+  // artifact files. Both count 4 and 5 even though the registry declares six
+  // source/artifact pairs, because 0.5.0 records the 0.4.0 vault body.
+  const covenantSources = Object.keys(constants.contracts).filter(
+    (k) => k !== 'compiler' && !k.startsWith('$'),
+  ).length;
+  const artifacts = new Set(flat.map((c) => c.artifact)).size;
 
   for (const [label, actual] of [
     ['specifications', specs],

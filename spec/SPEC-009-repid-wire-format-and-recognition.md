@@ -174,6 +174,17 @@ Five tags are defined. Their values are published as
   recognizer must emit **no fact** (malformed container, per §4.6).
 - The recognizer must never decode, store or judge the comment behind
   `commentHash`; hash fidelity is off-chain (SPEC-004 RF-09).
+- The preimage behind `commentHash` is byte-exact and normative for producers:
+  `REPID-CMT-V1` (12 ASCII bytes) ‖ `receiptCategory` (32 bytes, display order
+  — the category of the Receipt the rating belongs to, recoverable on-chain from
+  the tracked Rating Right) ‖ `raterPkh` (20 bytes, display order) ‖ `saltLen`
+  (1 byte, unsigned value 16–32) ‖ `salt` (`saltLen` bytes) ‖ `comment` (UTF-8,
+  NFC-normalized), hashed once with SHA-256; the salt comes from a
+  cryptographically secure random source and is never on-chain (SPEC-004
+  RF-10/RF-11, SPEC-008 RF-O826). The recognizer does not verify it — a rating
+  with a well-formed 32-byte `commentHash` is recognized regardless of what the
+  preimage was — but a producer must follow this layout for the digest to be
+  verifiable off-chain.
 
 ### 4.3 `REPID_PLATFORM1` — platform confirmation
 
@@ -841,3 +852,33 @@ from a valid Receipt in exactly one field. These tests show the recognizer
 rejects a shape on its own. They do not show the covenant would, because the
 covenant never gets the chance — and where the two agree, the recognizer's check
 is defense in depth rather than a live gap.
+
+### B.4 Preimage KATs (executed by `conformance/comment-hash-vectors.test.mjs`)
+
+These vectors pin the **byte-exact preimage** of §4.2, the part of the protocol
+no recognizer exercises. They are static SHA-256 computations executed by the
+protocol conformance suite (real hashes, no VM needed — the covenants never
+read these hashes).
+
+| Preimage (hex) | SHA-256 digest |
+|---|---|
+| `REPID-CMT-V1` (12 B) ‖ `receiptCategory` `5f4c7226…25560b36b0` (32 B) ‖ `raterPkh` `0000…0001` (20 B) ‖ `saltLen` `10` (1 B) ‖ `salt` `a1b2c3d4e5f60718293a4b5c6d7e8f90` (16 B) ‖ `comment` `Top rider, arrived on time` (26 B) | `b73e344beeac85c3136a7e5dc83feb869a9966bd5a3e9540150c29c6e16d4cf4` |
+
+Full preimage bytes (reproducible in
+`conformance/comment-hash-vectors.test.mjs`):
+`52455049442d434d542d5631 ‖ 5f4c7226b4aa9d9e9dcbf9518e9bbed00e4e44306c2052ce2bd7fa25560b36b0 ‖ 0000000000000000000000000000000000000001 ‖ 10 ‖ a1b2c3d4e5f60718293a4b5c6d7e8f90 ‖ 546f702072696465722c2061727269766564206f6e2074696d65`
+(107 bytes).
+
+The `receiptCategory` is the on-chain category of the Receipt the rating
+belongs to — recoverable by the rater from the receipt it signed, and by any
+reader from the tracked Rating Right. The vector uses the **real** category of
+the 2026-09-27 Chipnet fixture (`conformance/fixtures/real-chain-facts.json`),
+so the KAT doubles as a real-data anchor rather than a hand-written example.
+
+The interaction `contextHash` deliberately has **no published preimage**
+(SPEC-003 RF-08, decision P6 in `audit/lote2/A-DECISIONES.md`), so it has no
+vector here. The only context-hash fact recorded in `protocol/constants.json`
+is that the `REPID-RCTX-V1` prefix is **13** ASCII bytes — corrected from an
+earlier 12-byte claim — and the KAT pins that byte count so a producer copying
+the old number does not truncate the prefix; a truncated prefix produces a
+digest nothing can verify.

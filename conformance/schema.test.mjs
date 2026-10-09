@@ -387,14 +387,16 @@ test('all eight fact types are declared, with validity flags matching SPEC-008',
 
 test('the protocol version is a pre-release, not 1.0.0', () => {
   assert.equal(protocolVersion.protocol, 'repid');
-  assert.equal(protocolVersion.version, '0.4.0');
+  assert.equal(protocolVersion.version, '0.5.0');
   assert.equal(protocolVersion.status, 'pre-release');
   // SPEC-010 section 4.1: while the version is 0.y.z a breaking change advances
-  // MINOR, so the minor number is what records that 0.4.0 added the vault burn
-  // gate, REPID_RATING2, REPID_RETRACT1 and the interaction context as a
-  // superset of 0.3.0 (a compliant 0.4.0 reader still reads every 0.3.0 byte
-  // the same way). The leading zero must not be quietly dropped by an edit
-  // that meant to promote.
+  // MINOR, so the minor number is what records each breaking batch: 0.4.0 added
+  // the vault burn gate, REPID_RATING2, REPID_RETRACT1 and the interaction
+  // context as a superset of 0.3.0 (a compliant 0.4.0 reader still reads every
+  // 0.3.0 byte the same way), and 0.5.0 redefines the normative commentHash
+  // preimage to bind the utterance to its Receipt (decision P6, SPEC-004 RF-10)
+  // without changing how any historical fact is read (A-DECISIONES.md). The
+  // leading zero must not be quietly dropped by an edit that meant to promote.
   assert.ok(protocolVersion.version.startsWith('0.'));
   assert.ok(
     protocolVersion.promotionTo1_0_0.length > 0,
@@ -409,7 +411,10 @@ test('contract fingerprints are recorded for every declared covenant', () => {
   //
   // SPEC-008 RF-W56/RF-W76 (versioned vault): the identityVault is a versioned
   // covenant, so every declared version must carry its own source/artifact pair.
-  // The total is 4 covenant sources and 5 artifacts (identityVault 0.3.0 + 0.4.0).
+  // The total is 4 covenant sources and 5 artifact files (identityVault 0.3.0 +
+  // 0.4.0). 0.5.0 changes no covenant, so its record repeats the 0.4.0 pair:
+  // it does not add an artifact, and the registry can still hand a 0.5.0
+  // implementation canonical bytes to bind against.
   for (const [name, contract] of Object.entries(constants.contracts)) {
     if (name === 'compiler' || name.startsWith('$')) continue;
     if ('versions' in contract) {
@@ -435,7 +440,12 @@ test('contract fingerprints are recorded for every declared covenant', () => {
       flat.push(contract);
     }
   }
-  assert.equal(flat.length, 5, '4 covenant sources, 5 compiled artifacts');
+  assert.equal(flat.length, 6, '3 un-versioned contracts + 3 declared identityVault versions');
+  assert.equal(
+    new Set(flat.map((e) => e.artifact)).size,
+    5,
+    '4 covenant sources, 5 compiled artifact files (0.5.0 records the 0.4.0 body)',
+  );
   assert.equal(constants.contracts.compiler.name, 'cashc');
   assert.equal(constants.contracts.compiler.version, '0.13.2');
 });

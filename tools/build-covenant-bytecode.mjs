@@ -247,6 +247,8 @@ const document = {
     'by hand: `npm run bytecode:check` fails when this file is stale. Since 0.4.0 the ' +
     'identityVault entry is versioned (`versions`): the flat bytecode fields carry the body of ' +
     'the version named by `version` (0.3.0), and every compiled body lives in `versions`. ' +
+    'A protocol version that changes no covenant records the previous body under its own name ' +
+    '(0.5.0 records the 0.4.0 body), so an implementation declaring it binds against the same bytes. ' +
     'Recognizers must match against the declared set (SPEC-009 RF-W56/RF-W76), never by trial ' +
     'matching.',
   generatedFrom: 'contracts/*.cash',

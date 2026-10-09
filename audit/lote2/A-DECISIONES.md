@@ -453,3 +453,118 @@ anotar `RATING_ISSUED` con su categoría.
 - SPEC-008: `RF-V14`+ y filas nuevas de la matriz de vectores.
 - SPEC-009: `RF-W64`+ (tras el RF-W63 reservado del lote 1).
 - SPEC-010: correcciones §3/§4/§6 y versión `0.4.0`.
+
+---
+
+## P6 — Pase de arquitecto (aplicado, revisión de 2026-10-08)
+
+Decisión del arquitecto sobre los pendientes del lote 2. Los puntos 1–4 se
+aplican en el working tree de `repid-protocol` con la subida de versión; el
+punto 5 queda documentado como versión futura.
+
+### 1. `commentHash`: la preimagen ata el comentario al recibo
+
+**Sí: incluir `receiptCategory` en la preimagen del comentario.** El layout
+normativo queda:
+
+```
+preimagen := "REPID-CMT-V1"                 // 12 bytes ASCII = 0x52455049442d434d542d5631
+           || receiptCategory               // 32 bytes, display order, la categoría del Receipt al que pertenece el rating
+           || raterPkh                      // 20 bytes, display order
+           || saltLen                       // 1 byte uint8, rango 16..32
+           || salt                          // saltLen bytes aleatorios
+           || comentario                    // UTF-8 NFC hasta el final
+commentHash := SHA256(preimagen)
+```
+
+- `receiptCategory` es el campo on-chain del `RECEIPT_GENESIS` (0x11 preimagen
+  sin relación con los rubros de interacción): lo recupera el rater del recibo
+  que firmó y cualquier lector de la pista de Rating Rights. Cada rating queda
+  ligado **a un único recibo**, de modo que el mismo texto y la misma nota no
+  pueden reutilizarse entre dos interacciones del mismo rater.
+- El vector KAT de `comment-hash-vectors.test.mjs` se regenera **una sola vez**
+  con la nueva preimagen (107 bytes) y usa la `receiptCategory` **real** del
+  fixture Chipnet de 2026-09-27 (`real-chain-facts.json`, `5f4c7226…b36b0`), de
+  modo que el vector vuelve a anclar datos reales, no ejemplos sintéticos. El
+  digest se calculó de forma independiente (segunda vía) y se verificó que la
+  vía de cálculo reproduce también el vector anterior antes de reemplazarlo.
+
+### 2. `contextHash`: **sin** preimagen publicada
+
+El `contextHash` de la forma `0x11` **sigue sin preimagen publicada**. La regla
+borrador que publicaba `SHA256('REPID-RCTX-V1' ‖ metadata)` se **elimina**
+(RF-12 fuera de SPEC-004, vector KAT y fila de Anexo B.4 fuera de SPEC-009; sin
+cambio de lectura de transacción histórica: el reconocedor nunca decodifica el
+`contextHash`). En su lugar solo se registra como hecho el **conteo de bytes**
+del prefijo: `REPID-RCTX-V1` son **13** bytes ASCII (antes se afirmaba 12;
+`constants.json` `prefixBytes` corregido `12 → 13`). El KAT conserva un guard
+que fija ese conteo para que un productor que copie el número viejo no trunque.
+
+### 3. §13 del WHITE-PAPER: la matriz de evidencia en tres niveles
+
+Se reescribe la matriz "What is proven per fact type" con **tres niveles de
+evidencia**, no intercambiables:
+
+- **(a) transacción real con txid** — la transacción existe, fue emitida a la red
+  de prueba y su `txid` quedó registrado;
+- **(b) VM local sin transmitir** — el covenant (o spend) fue ejecutado por la
+  VM real localmente (libauth `BCH_2026_05`), pero nunca se emitió;
+- **(c) solo especificado / reconocimiento** — la forma está especificada y
+  cubierta por los vectores de reconocimiento, sin ejecución por la VM.
+
+Con "ejecutado" definido como nivel (a): **5 de 8** tipos de hecho tienen
+transacción real con txid (genesis de identidad, genesis de recibo, rating
+emitido, confirmación de plataforma y Trust Link, todos de la corrida Chipnet
+del 2026-09-10, TASK-026). Burn de identidad es nivel (b) (VM local,
+`identity-vault-burn-delay.test.mjs`). Top-up de collateral, retractación de
+rating y toda la columna de covenant del top-up quedan en nivel (c): el top-up
+nunca se ejecutó ni por la VM local (no hay test de VM para `increaseCollateral`
+en la suite) ni en Chipnet (la corrida de `chipnet-vault-e2e.mjs` quedó
+pendiente del arquitecto, TASK-037), y la retractación no tiene endpoint en la
+demo ni transacción real. Se aplica el criterio con la misma vara a plataforma
+(a), Trust Link (a) y retractación (c).
+
+### 4. Versión
+
+Cita literal de SPEC-010 §4.1: *"While the version is `0.y.z`, a change that
+would constitute a `MAJOR` change under the rules above MUST increment the
+**`MINOR`** number and MUST NOT increment the `PATCH` number."* La preimagen
+normativa de `commentHash` cambia en un punto que los productores deben seguir
+(SPEC-009 §4.2); aunque no altera la lectura de transacciones históricas por el
+reconocedor (el `commentHash` es opaco on-chain, RF-09), el alcance toca la
+semántica normativa que un productor copia, así que se clasifica como cambio de
+clase `MAJOR` bajo §4 y, por §4.1, se promueve **MINOR**: `0.4.0 → 0.5.0`. El
+fondo se documenta en SPEC-010 §2 y en el WHITE-PAPER §14.
+
+### 5. P1 — registro de bytecodes por versión y datos reales (futura aparte)
+
+Se aprueba **en principio** pero como **versión aparte** (futura): antes de
+implementarlo hay que proponer un registro de bytecodes por versión y comprobar
+que los datos reales de Chipnet se siguen reconociendo. No se aplica en este
+pase.
+
+### 6. Declaración de `0.5.0` en el SDK y el registry de la vault
+
+El SDK declara soporte de lectura de `0.5.0` de forma deliberada — el juego de
+pruebas que lo bloqueaba (`sdk_version.test.ts`: "rejects a version that is
+merely plausible") era un disparador diseñado para forzar esta revisión, y la
+revisión concluye que `0.5.0` es un *superset de lectura* de `0.4.0`: su único
+cambio normativo es la preimagen del `commentHash`, que es opaca para el
+reconocedor, y el `contextHash` nunca tuvo preimagen publicada. El SDK no lee
+ningún byte distinto bajo `0.5.0`.
+
+Para que la comprobación de load-time (SPEC-010 §5) pase sin trial matching, el
+registry de la vault (`protocol/constants.json` `identityVault.versions`) gana
+la entrada `0.5.0` con el cuerpo de la `0.4.0` (el covenant no cambió en
+`0.5.0`): una implementación que declara `0.5.0` tiene bytes canónicos qué
+verificar (SPEC-009 RF-W56/RF-W76). No añade fuentes ni artefactos; el
+`schema.test.mjs` cuenta ahora **artefactos distintos (5)** en lugar de
+entradas del registry (6), y `white-paper-claims` deriva "covenant sources" del
+número de covenants (4) — antes de esta tanda su guard pasaba por coincidencia
+de rango de 40 caracteres.
+
+En el SDK, `SUPPORTED_PROTOCOL_VERSIONS = ['0.3.0', '0.4.0', '0.5.0']`, el
+disparador de "versión meramente plausible" avanza a `0.6.0`, y la suite queda
+en **150 tests / 150 passed** (15 files), re-medida el 2026-10-08. La próxima
+revisión (P1) debe re-evaluar si un `0.5.x` real exige un cuerpo de vault
+distinto.

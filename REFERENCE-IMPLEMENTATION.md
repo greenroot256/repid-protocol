@@ -90,13 +90,13 @@ none:
 
 Measured separately, because recognition now lives in its own repository and a
 single combined number would hide which half of the evidence is where. The
-recognition figure was re-measured on **2026-10-01** by running `npm test` in
+recognition figure was re-measured on **2026-10-08** by running `npm test` in
 `repid-sdk`, and the demo figure on the same date by running `npm test` in the
 demo repository with the funds gate unset.
 
 | Suite | Repository | Result | Breakdown |
 |---|---|---|---|
-| Recognition | `repid-sdk` | **93 passed / 0 failed** (11 files) | all run unconditionally; no network needed; 7 of them enforce requirement traceability |
+| Recognition | `repid-sdk` | **150 passed / 0 failed** (15 files) | all run unconditionally; no network needed; 7 of them enforce requirement traceability |
 | Demo | demo repository | **35 passed / 0 failed, 38 skipped** (4 files) | `e2e_server.test.js` (3 unconditional of 41), `interaction.test.js` (9), `reputation.test.js` (20), `persistence_conformance.test.js` (3) |
 
 The 38 skipped tests mint a genesis and have **not** been re-run against funded

@@ -5,7 +5,7 @@ and leaves the judgment to you.**
 
 | | |
 |---|---|
-| **Protocol version** | `0.4.0` (pre-release) |
+| **Protocol version** | `0.5.0` (pre-release) |
 | **Network** | Bitcoin Cash (BCH) |
 | **Technologies** | CashTokens, CashScript |
 | **Status** | Normative specification, canonical covenants and a conformance suite |
@@ -436,11 +436,21 @@ The comment behind a `commentHash` is **never on-chain**: it is delivered by
 agreement between the rater and whoever reads the fact, and the protocol commits
 to its hash so that "this comment was attached to this score" is checkable
 without being forged by whoever last touched the comment (SPEC-004 RF-08/RF-09).
-The preimage is normative and salted:
-`commentHash := SHA256('REPID-CMT-V1' ‖ raterPkh ‖ saltLen ‖ salt ‖ comment)`
+The preimage is normative and salted, and it **binds the utterance to the Receipt
+it rates** by hashing that Receipt's on-chain `receiptCategory`:
+`commentHash := SHA256('REPID-CMT-V1' ‖ receiptCategory ‖ raterPkh ‖ saltLen ‖ salt ‖ comment)`
 with a 16–32 byte `salt` that travels with the comment, never on-chain (SPEC-004
-RF-08/RF-09, `protocol/constants.json`). The salt is what keeps the comment's
-hash unguessable when the text is short or predictable.
+RF-10/RF-11, `protocol/constants.json`). The salt is what keeps the comment's
+hash unguessable when the text is short or predictable; the `receiptCategory`
+makes the same comment and score non-reusable across two interactions of the
+same rater.
+
+The interaction `contextHash` (in the 36-byte `0x11` commitment) deliberately
+has **no published preimage**: the protocol binds the context bytes to the
+Receipt but assigns no meaning to them, and the recognizer never decodes them.
+`protocol/constants.json` records only the byte-length fact of its prefix —
+`REPID-RCTX-V1` is 13 ASCII bytes, corrected from an earlier 12-byte claim — and
+the conformance KAT pins that count.
 
 ### 7.3 Who declared a platform confirmation or a trust link?
 
@@ -674,7 +684,7 @@ A transaction, once broadcast, may be interpreted for years. Therefore **the
 meaning of a historical event must never change** — that is the requirement
 versioning exists to protect.
 
-The protocol version is a three-part semantic version, `0.4.0`, recorded in
+The protocol version is a three-part semantic version, `0.5.0`, recorded in
 machine-readable form so that an implementation can check what it is speaking
 to. An implementation must declare the set of protocol versions it supports and
 must fail loudly rather than operate on a version it does not implement.
@@ -776,15 +786,15 @@ reputation model — must not change protocol results.
 
 `npm test` runs the first four.
 
-**Measured on 2026-10-07:**
+**Measured on 2026-10-08:**
 
 | Check | Result |
 |---|---|
-| `npm test` | **56 tests, 56 passed, 0 failures**, running unconditionally |
-| `npm run specs:check` | 9 specifications, 216 requirement declarations, no dead references |
-| `npm run requirements:check` | 216 declarations extracted, inventory in sync |
-| `npm run encoding:check` | 49 text files, valid UTF-8, no mojibake, no partly rewritten file |
-| `npm run artifacts:check` | All contract artifacts reproduce exactly: four covenant sources, five compiled artifacts (identityVault 0.3.0 and 0.4.0 verified separately), with `cashc` 0.13.2 |
+| `npm test` | **60 tests, 60 passed, 0 failures**, running unconditionally |
+| `npm run specs:check` | 9 specifications, 218 requirement declarations, no dead references |
+| `npm run requirements:check` | 218 declarations extracted, inventory in sync |
+| `npm run encoding:check` | 51 text files, valid UTF-8, no mojibake, no partly rewritten file |
+| `npm run artifacts:check` | All contract artifacts reproduce exactly: four covenant sources, five compiled artifacts (identityVault 0.3.0 and 0.4.0 verified separately; the registry records the same vault body for 0.5.0, which changed no covenant), with `cashc` 0.13.2 |
 
 `artifacts:check` is designed so that an absent toolchain can never masquerade
 as a pass: it reports `SKIPPED`, never `PASS`, when the compiler cannot be
@@ -840,14 +850,14 @@ two Rating Rights, and both parties rating each other. Those real transaction
 identifiers are the source of the fixture the schema is checked against — the
 suite tests real bytes, not hand-written examples.
 
-**Recognition coverage, measured 2026-10-07:** the recognition SDK's suite
+**Recognition coverage, measured 2026-10-08:** the recognition SDK's suite
 reports **150 tests, 150 passed, 0 failures** across 15 files, all running
 unconditionally with no network access. Within it, 23 tests cover data-output
 container parsing and 16 cover the receipt-genesis shape (including the `0.4.0`
 interaction-context commitment), the areas that had previously been specified
 but unverified.
 
-**The demonstration application, measured 2026-10-07:** 73 tests across 4 files;
+**The demonstration application, measured 2026-10-08:** 73 tests across 4 files;
 35 pass unconditionally and 38 are skipped. The skipped tests mint a genesis and
 therefore require funded wallets on a real test network; they are declared
 unverified rather than counted as passing.
@@ -857,46 +867,63 @@ by dedicated scripts in the demonstration repository, which exercise issuance
 against the actual Virtual Machine rather than a simulator.
 
 **What is proven per fact type — the honest matrix.** A fact can be covered by
-three different kinds of evidence, and they are not interchangeable. "Covenant"
-means the on-chain invariant was executed by the real Virtual Machine on Chipnet
-and asserted (not merely observed). "Indexer" means the recognizer is exercised
-by the conformance suite's unit tests. "Fixture" means real broadcast bytes are
-stored as conformance vectors. A box says `✓` only where that evidence exists
-today:
+three different kinds of evidence, and they are not interchangeable:
 
-| Fact type | Covenant | Indexer | Real fixture |
-|---|---|---|---|
-| Identity genesis | `✓` (vault `mint`) | `✓` | `✓` |
-| Collateral top-up | `✓` (`increaseCollateral`) | `✓` | — |
-| Identity burn | `✓` (`burn`) | `✓` | — |
-| Receipt genesis | `✓` | `✓` | `✓` |
-| Rating issued | `✓` (Rating Right spend) | `✓` | `✓` |
-| Rating retraction | `—` (specified and VM-tested, not yet run on Chipnet) | `✓` | — |
-| Platform confirmation | `✓` (P2PKH spend) | `✓` | — |
-| Trust link | `✓` (P2PKH spend) | `✓` | — |
+- **(a) real transaction with txid** — the transaction was actually broadcast to
+  the Chipnet test network and its `txid` was recorded;
+- **(b) local VM without broadcast** — the spend was executed by the real
+  Virtual Machine locally (libauth, `BCH_2026_05`), but never transmitted;
+- **(c) specified / recognition only** — the shape is specified and exercised by
+  the recognizer's conformance vectors, without any VM execution.
 
-Seven of the eight fact types have therefore been executed by the real Virtual
-Machine. **Rating retraction is the exception**: it is the newest fact (`0.4.0`),
-its spend is a plain P2PKH (no covenant to compile), it is fully covered by the
-recognizer's tests, but the demonstration application does not expose a
-retraction endpoint yet, so no real broadcast transaction has been produced for
+For the count below, **"executed" is defined as level (a)**. The matrix shows the
+highest level reached per fact type:
+
+| Fact type | Evidence | Notes |
+|---|---|---|
+| Identity genesis | **(a)** | Real tx with txid: `real-chain-facts.json` (2026-09-27) + TASK-026 (2026-09-10, `ac8027090206…`) |
+| Collateral top-up | (c) | Covenant compiled and recognized; no local VM test for `increaseCollateral`, no broadcast (TASK-037 real run has no network evidence) |
+| Identity burn | (b) | Executed by the local VM in `identity-vault-burn-delay.test.mjs`; never broadcast |
+| Receipt genesis | **(a)** | Real tx with txid: `real-chain-facts.json` (2026-09-27) + TASK-026 (2026-09-10, `c5d7a5cc872e…`) |
+| Rating issued | **(a)** | Real tx with txid (Rating Right spend): `real-chain-facts.json` (2026-09-27) + TASK-026 (2026-09-10) |
+| Rating retraction | (c) | Newest fact (`0.4.0`); no demo endpoint, no real broadcast produced |
+| Platform confirmation | **(a)** | Real tx with txid from TASK-026 (2026-09-10, `50c65e7164135005…`) |
+| Trust link | **(a)** | Real tx with txid from TASK-026 (2026-09-10, `5170e3a9cdcd…`) |
+
+**Five of the eight fact types have therefore been executed by the real Virtual
+Machine on Chipnet**: identity genesis, receipt genesis, rating issued, platform
+confirmation and trust link, all with recorded `txid`s. The criterion is applied
+with the same yardstick to every row — platform confirmation and trust link
+qualify because their transactions were really broadcast (TASK-026, 2026-09-10),
+and **rating retraction does not**: it is the exception. Retraction is the newest
+fact (`0.4.0`), its spend is a plain P2PKH (no covenant to compile), it is fully
+covered by the recognizer's tests, but the demonstration application does not
+expose a retraction endpoint yet, so no real broadcast transaction exists for
 it. Its on-chain rule is the same as the other P2PKH spends — a signature the
 network enforces and a data output the indexer reads — but that equivalence has
-not been turned into real-VM evidence. The four non-fixture rows show the other
-gap: their obligations and shapes are specified and tested, but the reference
-implementation has not retained a real broadcast transaction for them as a
-conformance fixture. The `conformance/fixtures/real-chain-facts.json` file
-records which rows are fixtures today, mechanically.
+not been turned into real-VM evidence.
+
+**Identity burn** sits a level lower: executed by the VM locally but never
+broadcast. **Collateral top-up** and **rating retraction** are specified and
+recognition-tested only; in particular, no conformance test runs
+`increaseCollateral` through the VM, so its on-chain invariant has the weakest
+evidence in the table. Two of the five level-(a) rows — platform confirmation and
+trust link — have recorded txids but their bytes are not retained as conformance
+fixtures; the other three are retained in
+`conformance/fixtures/real-chain-facts.json`, which records mechanically which
+rows are fixtures today.
 
 ### What has not been proven
 
 Stated plainly, because the project's own rules require it:
 
 - Only **three of the eight** fact types — identity genesis, receipt genesis and
-  rating issued — are covered by the real-network evidence held in this
-  repository. Collateral top-up, burn, platform confirmation and trust link are
-  specified and tested (and rating retraction is specified in `0.4.0`), but are
-  not all covered by real-VM evidence in the conformance fixtures.
+  rating issued — have real broadcast bytes **retained as conformance fixtures**
+  in this repository. Five have real broadcast transactions with recorded txids
+  (the matrix above); two of those five — platform confirmation and trust link —
+  have no retained fixture bytes, and collateral top-up and rating retraction
+  have no real-VM evidence at all. None of this is inferred: every row and every
+  count comes from the matrix, which states where each claim lives.
 - **The covenant interface has no automated regression coverage.** The
   mock-based unit tests that provided it were removed. What was lost was
   interface-shape regression coverage, not real-VM evidence, since the mock
@@ -942,11 +969,13 @@ they are the boundaries of what RepID claims. None of them is a guarantee.
   recognizer reports the hashes exactly as spent; the correspondence with an
   actual off-chain comment or context is an application claim. The two hashes
   differ in one real respect: the `commentHash` preimage is **normative and
-  salted on purpose** (so anyone who holds the off-chain comment can prove it
-  was the one committed, without the hash being guessable from a short text),
-  while the `interaction contextHash` deliberately has **no published preimage
-  format** — the protocol binds context bytes to the receipt but assigns no
-  meaning to them, and the recognizer never decodes them.
+  salted on purpose**, and it binds the utterance to its Receipt by hashing that
+  Receipt's `receiptCategory` (so anyone who holds the off-chain comment and the
+  salt can prove it was the one committed — without the hash being guessable
+  from a short text, and without the same comment being reusable across two
+  interactions), while the `interaction contextHash` deliberately has **no
+  published preimage format** — the protocol binds context bytes to the receipt
+  but assigns no meaning to them, and the recognizer never decodes them.
 
 **About evidence and tooling**
 
@@ -1025,10 +1054,10 @@ npm run artifacts:check   # every covenant recompiles to the committed artifact
 ### Source of the numerical claims in this document
 
 Every figure quoted above was measured, not estimated. The protocol's own checks
-(56 tests, 9 specifications, 216 requirement declarations, five reproducing
-artifacts from four covenant sources) were run on 2026-10-07. The recognition
+(60 tests, 9 specifications, 218 requirement declarations, five reproducing
+artifacts from four covenant sources) were run on 2026-10-08. The recognition
 suite figure (150 tests in 15 files) and the demonstration application's figures
-(35 passing, 38 skipped in 4 files) were measured the same day in their own
+(35 passing, 38 skipped in 4 files) were measured on 2026-10-07 in their own
 repositories. The real-network
 provenance — Chipnet, five facts across three fact types, 2026-09-27 — is
 recorded in `conformance/fixtures/real-chain-facts.json`.

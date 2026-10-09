@@ -30,7 +30,7 @@ authoritative copy; §6 describes how the version of an individual fact's
 ```json
 {
   "protocol": "repid",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "status": "pre-release",
   "specification": {
     "normativeCore": "SPEC-008-repid-protocol.md",
@@ -76,6 +76,20 @@ authoritative copy; §6 describes how the version of an individual fact's
 > version is `0.y.z`, a breaking change advances `MINOR` (§4.1), so the whole
 > batch lands as the next `MINOR` number, exactly once; the version file is
 > updated in task F, never in this audit's diffs.
+>
+> **`0.5.0`.** The next step disciplined by §4.1: decision P6
+> (`audit/lote2/A-DECISIONES.md`) redefines the normative `commentHash` preimage
+> — `REPID-CMT-V1` ‖ `receiptCategory` (32 B, display order) ‖ `raterPkh` (20 B)
+> ‖ `saltLen` (1 B, 16–32) ‖ `salt` ‖ `comment` (UTF-8 NFC), SHA-256 once
+> (SPEC-004 RF-10) — a producer-facing contract that SPEC-009 §4.2 states as
+> normative, and therefore a change of class `MAJOR` under §4. While the version
+> is `0.y.z`, a `MAJOR`-class change advances `MINOR` (§4.1), so the batch lands
+> as **`0.5.0`**. The `contextHash` continues to have **no published preimage**
+> (an early draft formula was removed before release), and the byte-length fact
+> of its prefix in `protocol/constants.json` is corrected from 12 to **13**. No
+> historical fact is read differently: the encoding of every on-chain field, the
+> tags and the covenant interfaces are unchanged, so a compliant `0.4.0` reader
+> still reads every `0.4.0` byte the same way.
 
 ## 3. What a Version Covers
 
